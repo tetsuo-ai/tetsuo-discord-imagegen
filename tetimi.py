@@ -11,7 +11,7 @@ import re
 # Load environment variables
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-INPUT_IMAGE = 'input.png'
+INPUT_IMAGE = './images/tetsuo_logo.png'
 
 # Constants for validation
 MAX_IMAGE_SIZE = (2000, 2000)  # Maximum allowed image dimensions
@@ -274,6 +274,15 @@ async def on_reaction_add(reaction, user):
 
 @bot.command(name='tetsuo')
 async def tetsuo_command(ctx, *args):
+    """
+    Fine control over image generation options
+
+    --rgb    R G B      custom color values in decimal
+    --chroma 1..20      chromatic prism effect
+    --scan   1..20      scan line distance
+    --glitch 1..20      split and offset color layers
+    --noise  0.0..1.0   noise percentage
+    """
     if not Path(INPUT_IMAGE).exists():
         await ctx.send(f"Error: Input image '{INPUT_IMAGE}' not found!")
         return
@@ -363,3 +372,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
