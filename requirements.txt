@@ -1,0 +1,4 @@
+discord
+pillow
+numpy
+python-dotenv
