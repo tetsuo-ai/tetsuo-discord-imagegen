@@ -11,7 +11,7 @@ import re
 # Load environment variables
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-INPUT_IMAGE = 'input.png'
+INPUT_IMAGE = './images/tetsuo_logo.png'
 
 # Constants for validation
 MAX_IMAGE_SIZE = (2000, 2000)  # Maximum allowed image dimensions
