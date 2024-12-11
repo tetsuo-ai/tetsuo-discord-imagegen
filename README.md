@@ -71,3 +71,8 @@ You can stack multiple effects:
 
 - Effects are applied in sequence and may have unexpected interactions
 - Some combinations may produce intense visual effects
+
+
+
+AUTHORS:
+https://github.com/Graceus777
