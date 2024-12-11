@@ -21,38 +21,47 @@ MAX_FILE_SIZE = 8 * 1024 * 1024  # 8MB max file size
 # Effect presets
 EFFECT_PRESETS = {
     'cyberpunk': {
-        'chroma': 8,
         'rgb': (0, 255, 255),  # Cyan base
+        'alpha': 180,          # Transparent enough to see detail
+        'chroma': 8,
         'glitch': 5,
         'scan': 2,
         'noise': 0.05
     },
     'vaporwave': {
         'rgb': (255, 100, 255),  # Pink base
+        'alpha': 160,            # More transparent for dreamy effect
         'chroma': 15,
         'scan': 3,
         'noise': 0.02
     },
     'glitch_art': {
+        'rgb': (255, 50, 50),    # Red base
+        'alpha': 140,            # Very transparent for glitch blend
         'glitch': 15,
         'chroma': 20,
         'noise': 0.1
     },
     'retro': {
-        'rgb': (50, 200, 50),  # Green terminal
+        'rgb': (50, 200, 50),    # Green terminal
+        'alpha': 200,            # Semi-transparent for CRT look
         'scan': 2,
         'noise': 0.08
     },
     'matrix': {
-        'rgb': (0, 255, 0),  # Pure green
+        'rgb': (0, 255, 0),      # Matrix green
+        'alpha': 160,            # Transparent to maintain detail
         'scan': 1,
         'glitch': 3,
-        'noise': 0.03
+        'noise': 0.03,
+        'chroma': 5              # Slight color separation
     },
     'synthwave': {
-        'rgb': (255, 0, 255),  # Magenta
+        'rgb': (255, 0, 255),    # Magenta
+        'alpha': 180,            # Semi-transparent
         'chroma': 10,
-        'scan': 4
+        'scan': 4,
+        'noise': 0.02
     }
 }
 
@@ -138,19 +147,35 @@ class ImageProcessor:
         
         return Image.fromarray(img_array)
     
-    def colorize_non_white(self, r, g, b):
-        """Colorize non-white pixels with validation"""
-        if not all(isinstance(x, int) and 0 <= x <= 255 for x in [r, g, b]):
-            raise ValueError("RGB values must be integers between 0 and 255")
+    def colorize_non_white(self, r, g, b, alpha=255):
+        """Colorize non-white pixels with alpha support"""
+        if not all(isinstance(x, int) and 0 <= x <= 255 for x in [r, g, b, alpha]):
+            raise ValueError("RGB and alpha values must be integers between 0 and 255")
             
-        img_array = np.array(self.base_image)
-        non_white_mask = ~((img_array[:,:,0] == 255) & 
-                          (img_array[:,:,1] == 255) & 
-                          (img_array[:,:,2] == 255))
-        img_array[non_white_mask, 0] = r
-        img_array[non_white_mask, 1] = g
-        img_array[non_white_mask, 2] = b
-        return Image.fromarray(img_array)
+        # Convert to RGBA array
+        img_array = np.array(self.base_image.convert('RGBA'))
+        
+        # Create a color overlay with the specified alpha
+        overlay = np.zeros_like(img_array)
+        overlay[:, :] = [r, g, b, alpha]
+        
+        # Calculate luminance of original image
+        luminance = np.sum(img_array[:, :, :3] * [0.299, 0.587, 0.114], axis=2)
+        
+        # Create mask for non-white pixels
+        non_white_mask = luminance < 250  # Allow some tolerance for near-white pixels
+        
+        # Blend original with overlay based on luminance
+        result = img_array.copy()
+        blend_factor = alpha / 255.0
+        
+        # Only modify non-white pixels
+        result[non_white_mask] = (
+            (1 - blend_factor) * img_array[non_white_mask] +
+            blend_factor * overlay[non_white_mask]
+        ).astype(np.uint8)
+        
+        return Image.fromarray(result)
     
     def add_chromatic_aberration(self, offset=10):
         """Add RGB channel offset effect"""
@@ -203,12 +228,18 @@ def parse_discord_args(args):
         else:
             raise ValueError(f"Unknown preset. Available presets: {', '.join(EFFECT_PRESETS.keys())}")
     
-    # Parse RGB values
-    rgb_match = re.search(r'--rgb\s+(\d+)\s+(\d+)\s+(\d+)', args)
+    # Parse RGB values and alpha
+    rgb_match = re.search(r'--rgb\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+--alpha\s+(\d+))?', args)
     if rgb_match:
-        r, g, b = map(int, rgb_match.groups())
+        r, g, b = map(int, rgb_match.groups()[:3])
+        alpha = 255  # Default alpha
+        if rgb_match.group(4):
+            alpha = int(rgb_match.group(4))
+            if not 0 <= alpha <= 255:
+                raise ValueError("Alpha value must be between 0 and 255")
         if all(0 <= x <= 255 for x in [r, g, b]):
             result['rgb'] = (r, g, b)
+            result['alpha'] = alpha
         else:
             raise ValueError("RGB values must be between 0 and 255")
     
@@ -217,41 +248,20 @@ def parse_discord_args(args):
     if color_match:
         result['color'] = color_match.group(1)
     
-    # Parse glitch intensity
-    glitch_match = re.search(r'--glitch\s+(\d+)', args)
-    if glitch_match:
-        intensity = int(glitch_match.group(1))
-        if 1 <= intensity <= 20:
-            result['glitch'] = intensity
-        else:
-            raise ValueError("Glitch intensity must be between 1 and 20")
-    
-    # Parse chromatic aberration
-    chroma_match = re.search(r'--chroma\s+(\d+)', args)
-    if chroma_match:
-        offset = int(chroma_match.group(1))
-        if 1 <= offset <= 20:
-            result['chroma'] = offset
-        else:
-            raise ValueError("Chromatic aberration offset must be between 1 and 20")
-    
-    # Parse scan lines
-    scan_match = re.search(r'--scan\s+(\d+)', args)
-    if scan_match:
-        gap = int(scan_match.group(1))
-        if 1 <= gap <= 10:
-            result['scan'] = gap
-        else:
-            raise ValueError("Scan line gap must be between 1 and 10")
-    
-    # Parse noise
-    noise_match = re.search(r'--noise\s+(0?\.\d+)', args)
-    if noise_match:
-        intensity = float(noise_match.group(1))
-        if 0 <= intensity <= 1:
-            result['noise'] = intensity
-        else:
-            raise ValueError("Noise intensity must be between 0 and 1")
+    # Parse other effects
+    for param, pattern, validator, error_msg in [
+        ('glitch', r'--glitch\s+(\d+)', lambda x: 1 <= x <= 20, "Glitch intensity must be between 1 and 20"),
+        ('chroma', r'--chroma\s+(\d+)', lambda x: 1 <= x <= 20, "Chromatic aberration offset must be between 1 and 20"),
+        ('scan', r'--scan\s+(\d+)', lambda x: 1 <= x <= 10, "Scan line gap must be between 1 and 10"),
+        ('noise', r'--noise\s+(0?\.\d+)', lambda x: 0 <= x <= 1, "Noise intensity must be between 0 and 1")
+    ]:
+        match = re.search(pattern, args)
+        if match:
+            value = float(match.group(1)) if param == 'noise' else int(match.group(1))
+            if validator(value):
+                result[param] = value
+            else:
+                raise ValueError(error_msg)
     
     return result
 
@@ -274,6 +284,16 @@ async def on_reaction_add(reaction, user):
 
 @bot.command(name='tetsuo')
 async def tetsuo_command(ctx, *args):
+    """
+    Apply image effects with optional alpha transparency
+    
+    --rgb R G B        Custom color values in decimal
+    --alpha 0..255     Transparency for RGB effect (default: 255)
+    --chroma 1..20     Chromatic prism effect
+    --scan 1..20       Scan line distance
+    --glitch 1..20     Split and offset color layers
+    --noise 0.0..1.0   Noise percentage
+    """
     if not Path(INPUT_IMAGE).exists():
         await ctx.send(f"Error: Input image '{INPUT_IMAGE}' not found!")
         return
@@ -299,36 +319,31 @@ async def tetsuo_command(ctx, *args):
                 
             if effect == 'rgb':
                 r, g, b = params['rgb']
-                result = processor.colorize_non_white(r, g, b)
+                alpha = params.get('alpha', 255)
+                result = processor.colorize_non_white(r, g, b, alpha)
             elif effect == 'color':
                 color = hex_to_rgba(params['color'])
                 color_result = processor.add_color_overlay(color)
                 result = Image.alpha_composite(result, color_result)
             elif effect == 'glitch':
-                # Create a new processor with the current result
                 temp_processor = ImageProcessor(INPUT_IMAGE)
                 temp_processor.base_image = result.copy()
                 glitch_result = temp_processor.apply_glitch_effect(params['glitch'])
-                # Convert glitch result to RGBA if needed
                 if glitch_result.mode != 'RGBA':
                     glitch_result = glitch_result.convert('RGBA')
                 result = glitch_result
             elif effect == 'chroma':
-                # Create a new processor with the current result
                 temp_processor = ImageProcessor(INPUT_IMAGE)
                 temp_processor.base_image = result.copy()
                 result = temp_processor.add_chromatic_aberration(params['chroma'])
             elif effect == 'scan':
-                # Create a new processor with the current result
                 temp_processor = ImageProcessor(INPUT_IMAGE)
                 temp_processor.base_image = result.copy()
                 result = temp_processor.add_scan_lines(params['scan'])
             elif effect == 'noise':
-                # Create a new processor with the current result
                 temp_processor = ImageProcessor(INPUT_IMAGE)
                 temp_processor.base_image = result.copy()
                 noise_result = temp_processor.add_noise(params['noise'])
-                # Convert noise result to RGBA if needed
                 if noise_result.mode != 'RGBA':
                     noise_result = noise_result.convert('RGBA')
                 result = noise_result
