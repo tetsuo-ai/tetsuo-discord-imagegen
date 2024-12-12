@@ -55,7 +55,7 @@ Discord bot that applies Akira/Tetsuo-inspired visual effects to images with ada
 
 ## Effect Parameters
 
-Default user/adaptive weight ratio: 0.4/0.6
+Default user/adaptive weight ratio: 0.6/0.4
 - Brightness impacts alpha strength
 - Image complexity affects glitch intensity
 - Color variance influences chromatic aberration
