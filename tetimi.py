@@ -122,20 +122,54 @@ class ImageAnalyzer:
         }
     
     @staticmethod
-    def get_adaptive_params(analysis):
-        params = {}
-        params['alpha'] = int(255 * (1.0 - (analysis['brightness'] * 0.7 + analysis['contrast'] * 0.3)))
-        params['glitch'] = int(20 * (1.0 - (analysis['complexity'] * 0.8)))
-        params['chroma'] = int(20 * (1.0 - (analysis['color_variance']/255 * 0.9)))
-        params['noise'] = float(analysis['contrast'] * 0.5 + analysis['brightness'] * 0.5)
-        params['scan'] = int(10 * (1.0 - analysis['complexity']))
+    def get_adaptive_params(analysis, user_params=None, preset_params=None):
+        """
+        Generate adaptive parameters based on image analysis, but only for effects
+        that are either requested by the user or included in the chosen preset.
         
-        # Clamp values
-        params['alpha'] = max(100, min(255, params['alpha']))
-        params['glitch'] = max(1, min(20, params['glitch']))
-        params['chroma'] = max(1, min(20, params['chroma']))
-        params['noise'] = max(0.01, min(1.0, params['noise']))
-        params['scan'] = max(1, min(10, params['scan']))
+        Parameters:
+            analysis: Dictionary containing image analysis metrics
+            user_params: Dictionary of parameters specified by user commands
+            preset_params: Dictionary of parameters from selected preset
+        
+        Returns:
+            Dictionary of adaptive parameters only for requested effects
+        """
+        params = {}
+        
+        # Create a set of requested effects from both user params and preset
+        requested_effects = set()
+        
+        # Add effects from user parameters
+        if user_params:
+            requested_effects.update(user_params.keys())
+        
+        # Add effects from preset parameters
+        if preset_params:
+            requested_effects.update(preset_params.keys())
+        
+        # Only calculate parameters for requested effects
+        if 'alpha' in requested_effects:
+            # Adjust alpha based on image brightness and contrast
+            params['alpha'] = int(255 * (1.0 - (analysis['brightness'] * 0.7 + 
+                                               analysis['contrast'] * 0.3)))
+        
+        if 'glitch' in requested_effects:
+            # Calculate glitch intensity based on image complexity
+            params['glitch'] = int(20 * (1.0 - (analysis['complexity'] * 0.8)))
+        
+        if 'chroma' in requested_effects:
+            # Determine chromatic aberration based on color variance
+            params['chroma'] = int(20 * (1.0 - (analysis['color_variance']/255 * 0.9)))
+        
+        if 'noise' in requested_effects:
+            # Set noise level based on contrast and brightness
+            params['noise'] = float(analysis['contrast'] * 0.5 + 
+                                  analysis['brightness'] * 0.5)
+        
+        if 'scan' in requested_effects:
+            # Adjust scan line intensity based on image complexity
+            params['scan'] = int(10 * (1.0 - analysis['complexity']))
         
         return params
 
@@ -176,36 +210,36 @@ class ImageProcessor:
                 MIN_IMAGE_SIZE[1] <= self.base_image.size[1] <= MAX_IMAGE_SIZE[1]):
             raise ValueError(f"Image dimensions must be between {MIN_IMAGE_SIZE} and {MAX_IMAGE_SIZE}")
             
-        self.mask = self.base_image.convert('L')
         self.analyzer = ImageAnalyzer()
         self.analysis = self.analyzer.analyze_image(self.base_image)
-        self.adaptive_params = self.analyzer.get_adaptive_params(self.analysis)
+        # Don't calculate adaptive params yet - wait for merge_params
+        self.adaptive_params = {}
     
     def merge_params(self, user_params):
         """Merge user parameters with adaptive parameters"""
+        # Get preset parameters if a preset was specified
+        preset_name = user_params.get('preset')
+        preset_params = EFFECT_PRESETS.get(preset_name, {})
+        
+        # Now get adaptive parameters only for requested effects
+        self.adaptive_params = self.analyzer.get_adaptive_params(
+            self.analysis,
+            user_params,
+            preset_params
+        )
+        
+        # Merge the parameters with priority:
+        # 1. User specified parameters
+        # 2. Preset parameters
+        # 3. Adaptive parameters
         merged = self.adaptive_params.copy()
         
-        # Keep user-specified RGB values if provided
-        if 'rgb' in user_params:
-            merged['rgb'] = user_params['rgb']
-            
-        # Blend other parameters with adaptive values
-        for key in ['alpha', 'glitch', 'chroma', 'scan', 'noise']:
-            if key in user_params:
-                # Use weighted average between user and adaptive values
-                user_weight = 0.7  # Give more weight to user preferences
-                adaptive_weight = 0.3
-                if key in ['alpha', 'glitch', 'chroma', 'scan']:
-                    merged[key] = int(
-                        user_params[key] * user_weight +
-                        self.adaptive_params[key] * adaptive_weight
-                    )
-                else:  # noise
-                    merged[key] = float(
-                        user_params[key] * user_weight +
-                        self.adaptive_params[key] * adaptive_weight
-                    )
-                    
+        if preset_params:
+            merged.update(preset_params)
+        
+        # User params take highest priority
+        merged.update(user_params)
+        
         return merged
     
     def add_color_overlay(self, color):
@@ -250,26 +284,42 @@ class ImageProcessor:
         
         return Image.fromarray(result)
     
+
     def colorize_non_white(self, r, g, b, alpha=255):
-        """Enhanced colorization with improved blending"""
-        if not all(isinstance(x, int) and 0 <= x <= 255 for x in [r, g, b, alpha]):
-            raise ValueError("RGB and alpha values must be integers between 0 and 255")
-            
+        """
+        Enhanced colorization with more nuanced color blending based on image brightness.
+        The effect is strongest in darker areas and gradually reduces in brighter areas.
+        
+        Parameters:
+            r, g, b: RGB color values (0-255) for the target color
+            alpha: Overall intensity of the effect (0-255)
+        """
+        # Convert image to numpy array for faster processing
         img_array = np.array(self.base_image.convert('RGBA'))
-        overlay = np.zeros_like(img_array)
-        overlay[:, :] = [r, g, b, alpha]
         
-        # Calculate luminance with improved color perception
-        luminance = np.sum(img_array[:, :, :3] * [0.2126, 0.7152, 0.0722], axis=2)
-        non_white_mask = luminance < 250
+        # Create our color overlay
+        glow = img_array.copy()
+        glow[:, :] = [r, g, b, alpha]
         
+        # Calculate image brightness using perceptual color weights
+        # These weights match human perception of color brightness
+        luminance = np.sum(img_array[:, :, :3] * [0.299, 0.587, 0.114], axis=2)
+        
+        # Create mask for non-bright areas
+        non_white_mask = luminance < 240
+        
+        # Create smooth transition based on brightness
+        # The [:, :, np.newaxis] reshapes the array to work with RGB channels
+        blend_factor = ((255 - luminance) / 255.0)[:, :, np.newaxis]
+        
+        # Intensify the effect while keeping it in valid range
+        blend_factor = np.clip(blend_factor * 1.5, 0, 1)
+        
+        # Apply the color blend only to non-white areas
         result = img_array.copy()
-        blend_factor = alpha / 255.0
-        
-        # Apply smooth blending
         result[non_white_mask] = (
-            (1 - blend_factor) * img_array[non_white_mask] +
-            blend_factor * overlay[non_white_mask]
+            (1 - blend_factor[non_white_mask]) * img_array[non_white_mask] +
+            blend_factor[non_white_mask] * glow[non_white_mask]
         ).astype(np.uint8)
         
         return Image.fromarray(result)
@@ -291,21 +341,34 @@ class ImageProcessor:
         return Image.merge('RGBA', (r, g, b, a))
     
     def add_scan_lines(self, gap=2, alpha=128):
-        """Enhanced scan lines with variable intensity"""
-        if not isinstance(gap, int) or not 1 <= gap <= 10:
-            raise ValueError("Scan line gap must be between 1 and 10")
-        if not isinstance(alpha, int) or not 0 <= alpha <= 255:
-            raise ValueError("Scan line alpha must be between 0 and 255")
-            
+        """
+        Enhanced scan lines with variable intensity and subtle glow effect.
+        
+        Parameters:
+            gap: Space between scan lines (1-10)
+            alpha: Base intensity of the lines (0-255)
+        """
         width, height = self.base_image.size
         scan_lines = Image.new('RGBA', (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(scan_lines)
         
+        # Create scan lines with varying intensity
         for y in range(0, height, gap):
-            # Vary line intensity slightly
-            line_alpha = int(alpha * (0.8 + 0.4 * random.random()))
-            draw.line([(0, y), (width, y)], fill=(0, 0, 0, line_alpha))
+            # Calculate random intensity variation for each line
+            intensity = int(alpha * (0.7 + 0.3 * random.random()))
             
+            # Draw main scan line
+            draw.line([(0, y), (width, y)], fill=(0, 0, 0, intensity))
+            
+            # Draw slightly fainter line above for glow effect
+            if y > 0:  # Prevent drawing above image bounds
+                draw.line([(0, y-1), (width, y-1)], 
+                         fill=(0, 0, 0, intensity//2))
+        
+        # Apply subtle blur for glow effect
+        scan_lines = scan_lines.filter(ImageFilter.GaussianBlur(0.5))
+        
+        # Composite the scan lines over the original image
         return Image.alpha_composite(self.base_image.convert('RGBA'), scan_lines)
     
     def add_noise(self, intensity=0.1):
