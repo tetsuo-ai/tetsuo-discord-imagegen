@@ -1,108 +1,78 @@
+# Tetsuo Discord Bot
+
+A Discord bot that applies cyberpunk-inspired image effects and transformations to images.
+
+## Usage 💻
+
+### Basic Commands
 ```
-[TETSUO.SYS] - Image Manipulation Interface v1.0
-===============================================
-> Transforming reality, one pixel at a time.
-
-CORE FUNCTIONS
--------------
-Transform your consciousness (images) through the digital void using these command protocols:
-
-BASE COMMAND: !tetsuo
-------------------
-All transformations begin with !tetsuo, followed by your chosen effects.
-
-BASIC MUTATIONS
---------------
---rgb R G B
-  > Inject raw RGB into non-white zones
-  > Values: 0-255
-  > Example: !tetsuo --rgb 255 0 255 [SYNTHETIC MAGENTA]
-
---color #HEXCODE
-  > Overlay hex-based pigments on dark regions 
-  > Format: #RRGGBB
-  > Example: !tetsuo --color #FF0000 [DIGITAL CRIMSON]
-
---glitch INTENSITY
-  > Destabilize reality matrix
-  > Intensity: 1-20
-  > Example: !tetsuo --glitch 5 [MILD CORRUPTION]
-
---chroma OFFSET
-  > Split the color spectrum
-  > Offset: 1-20
-  > Example: !tetsuo --chroma 10 [REALITY BREACH]
-
---scan GAP
-  > Inject scan lines
-  > Gap: 1-10
-  > Example: !tetsuo --scan 2 [SCREEN BURN]
-
---noise LEVEL
-  > Add digital static
-  > Level: 0.0-1.0
-  > Example: !tetsuo --noise 0.1 [VOID WHISPERS]
-
-PRE-PROGRAMMED REALITY DISTORTIONS
---------------------------------
-Use --preset NAME to access curated reality warps:
-
-CYBERPUNK
-  > Neon-soaked cyber-enhancement
-  > !tetsuo --preset cyberpunk
-
-VAPORWAVE
-  > Digital dreams of the past
-  > !tetsuo --preset vaporwave
-
-GLITCH_ART
-  > Pure digital corruption
-  > !tetsuo --preset glitch_art
-
-RETRO
-  > Ancient terminal aesthetics
-  > !tetsuo --preset retro
-
-MATRIX
-  > Digital rain protocol
-  > !tetsuo --preset matrix
-
-SYNTHWAVE
-  > Neon grid activation
-  > !tetsuo --preset synthwave
-
-SYSTEM COMMANDS
---------------
-!tetsuo_presets
-  > Display all available reality presets
-  > Contains exact parameters for each transformation
-
-DELETION PROTOCOL
-----------------
-🗑️ React to remove the output from existence
-
-COMBINATION PROTOCOLS
--------------------
-Stack multiple effects for maximum reality distortion:
-
-Example combinations:
-> !tetsuo --rgb 255 0 0 --glitch 5 --scan 2
-> !tetsuo --preset cyberpunk --noise 0.2
-> !tetsuo --chroma 10 --glitch 5 --rgb 0 255 255
-
-[WARNING]
---------
-- Effects are applied in sequence
-- Some combinations may cause unexpected reality fragmentation
-- Not responsible for digital psychosis
-- Keep your consciousness backed up at all times
-
-[END OF DOCUMENTATION]
-// Remember: Reality is just a suggestion.
+!tetsuo --rgb R G B        - Apply RGB color to non-white areas
+!tetsuo --color #HEXCODE   - Add hex color overlay
+!tetsuo --glitch INTENSITY - Add glitch effect (1-20)
+!tetsuo --chroma OFFSET    - Add chromatic aberration (1-20)
+!tetsuo --scan GAP         - Add scan lines (1-10)
+!tetsuo --noise LEVEL      - Add noise (0.0-1.0)
 ```
 
-Would you like me to:
-1. Add more example combinations?
-2. Include troubleshooting section?
-3. Add visual examples for each effect?
-4. Add more thematic flavor text?
+### Preset Commands
+```
+!tetsuo --preset cyberpunk
+!tetsuo --preset vaporwave
+!tetsuo --preset glitch_art
+!tetsuo --preset retro
+!tetsuo --preset matrix
+!tetsuo --preset synthwave
+```
+
+### Combined Effects
+You can stack multiple effects:
+```
+!tetsuo --rgb 255 0 255 --glitch 15 --scan 2
+!tetsuo --preset cyberpunk --noise 0.2
+!tetsuo --chroma 10 --glitch 5 --rgb 0 255 255
+```
+
+### Utility Commands
+- `!tetsuo_presets` - Display all available presets and their parameters
+- 🗑️ React to any bot message to delete it
+
+## Examples 🎨
+
+### Epic Glitchwave
+```
+!tetsuo --rgb 255 0 255 --glitch 15 --chroma 20 --scan 2 --noise 0.15
+```
+
+### Cyber Terminal
+```
+!tetsuo --rgb 0 255 0 --scan 1 --noise 0.05 --glitch 3
+```
+
+### Digital Corruption
+```
+!tetsuo --preset glitch_art --chroma 15
+```
+
+## Technical Details 🔧
+
+- Image size limits: 50x50 to 2000x2000 pixels
+- Maximum file size: 8MB
+- Supported formats: PNG (output)
+- Effects are applied in sequential order
+- All parameters are validated before processing
+
+## Acknowledgments 🙏
+
+- Inspired by cyberpunk aesthetics and glitch art
+- Named after Tetsuo from Akira
+- Built with Python, Pillow, and Discord.py
+
+## Disclaimer ⚠️
+
+- Effects are applied in sequence and may have unexpected interactions
+- Some combinations may produce intense visual effects
+
+
+
+AUTHORS:
+https://github.com/Graceus777
