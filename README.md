@@ -1,78 +1,75 @@
-# Tetsuo Discord Bot
+# Tetsuo Image Effect Bot
 
-A Discord bot that applies cyberpunk-inspired image effects and transformations to images.
+Discord bot that applies Akira/Tetsuo-inspired visual effects to images with adaptive processing.
 
-## Usage 💻
+## Features
 
-### Basic Commands
+- Automatic effect adaptation based on image analysis
+- RGB color overlay with smart blending
+- Chromatic aberration and glitch effects
+- Scanline generation with variable intensity
+- Multiple preset styles (cyberpunk, vaporwave, akira, etc.)
+- Random image selection from folder
+- Image validation and safety checks
+
+## Commands
+
 ```
-!tetsuo --rgb R G B        - Apply RGB color to non-white areas
-!tetsuo --color #HEXCODE   - Add hex color overlay
-!tetsuo --glitch INTENSITY - Add glitch effect (1-20)
-!tetsuo --chroma OFFSET    - Add chromatic aberration (1-20)
-!tetsuo --scan GAP         - Add scan lines (1-10)
-!tetsuo --noise LEVEL      - Add noise (0.0-1.0)
+!tetsuo [options]
+!tetsuo_presets - List available presets
+!tetsuo_help - Show help message
 ```
 
-### Preset Commands
+### Options
+
+- `--preset <name>` - Use predefined effect combination
+- `--rgb R G B` - Custom RGB color values (0-255)
+- `--alpha` - Transparency (0-255)
+- `--chroma` - Chromatic aberration (1-20)
+- `--glitch` - Glitch effect intensity (1-20)
+- `--scan` - Scanline gap (1-10)
+- `--noise` - Noise intensity (0.0-1.0)
+- `--random` - Select random image from images folder
+
+### Examples
+
 ```
+!tetsuo --preset akira --random
+!tetsuo --rgb 255 0 0 --glitch 10
 !tetsuo --preset cyberpunk
-!tetsuo --preset vaporwave
-!tetsuo --preset glitch_art
-!tetsuo --preset retro
-!tetsuo --preset matrix
-!tetsuo --preset synthwave
 ```
 
-### Combined Effects
-You can stack multiple effects:
-```
-!tetsuo --rgb 255 0 255 --glitch 15 --scan 2
-!tetsuo --preset cyberpunk --noise 0.2
-!tetsuo --chroma 10 --glitch 5 --rgb 0 255 255
-```
+## Installation
 
-### Utility Commands
-- `!tetsuo_presets` - Display all available presets and their parameters
-- 🗑️ React to any bot message to delete it
+1. Clone repository
+2. Install requirements: `pip install -r requirements.txt`
+3. Create `.env` file with `DISCORD_TOKEN=your_token`
+4. Create `images` folder for input images
+5. Run: `python tetimi.py`
 
-## Examples 🎨
+## Image Requirements
 
-### Epic Glitchwave
-```
-!tetsuo --rgb 255 0 255 --glitch 15 --chroma 20 --scan 2 --noise 0.15
-```
+- Formats: PNG, JPEG
+- Size: 50x50 to 2000x2000 pixels
+- Max file size: 8MB
 
-### Cyber Terminal
-```
-!tetsuo --rgb 0 255 0 --scan 1 --noise 0.05 --glitch 3
-```
+## Effect Parameters
 
-### Digital Corruption
-```
-!tetsuo --preset glitch_art --chroma 15
-```
+Default user/adaptive weight ratio: 0.4/0.6
+- Brightness impacts alpha strength
+- Image complexity affects glitch intensity
+- Color variance influences chromatic aberration
+- Scan lines adapt to image detail level
 
-## Technical Details 🔧
+## Presets
 
-- Image size limits: 50x50 to 2000x2000 pixels
-- Maximum file size: 8MB
-- Supported formats: PNG (output)
-- Effects are applied in sequential order
-- All parameters are validated before processing
+- `akira`: Red dominant, medium glitch
+- `tetsuo`: Purple dominant, high glitch
+- `cyberpunk`: Cyan accent, low noise
+- `vaporwave`: Pink accent, high chroma
+- `matrix`: Green dominant, light scan lines
+- `synthwave`: Magenta accent, medium effects
 
-## Acknowledgments 🙏
+## License
 
-- Inspired by cyberpunk aesthetics and glitch art
-- Named after Tetsuo from Akira
-- Built with Python, Pillow, and Discord.py
-
-## Disclaimer ⚠️
-
-- Effects are applied in sequence and may have unexpected interactions
-- Some combinations may produce intense visual effects
-
-
-
-AUTHORS:
-https://github.com/Graceus777
+MIT License
