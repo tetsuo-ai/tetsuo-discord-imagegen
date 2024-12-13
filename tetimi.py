@@ -510,7 +510,7 @@ def parse_discord_args(args):
 
 @bot.event
 async def on_ready():
-    print(f'Tetsuo bot is online as {bot.user}')
+    print(f'Image generation bot is online as {bot.user}')
     print(f"Using input image: {INPUT_IMAGE}")
     if not Path(INPUT_IMAGE).exists():
         print(f"Warning: Input image '{INPUT_IMAGE}' not found!")
@@ -544,7 +544,7 @@ async def tetsuo_command(ctx, *args):
         if not params:
             presets_list = '\n'.join([f"- {name}: {', '.join(f'{k}={v}' for k, v in effects.items())}" 
                                     for name, effects in EFFECT_PRESETS.items()])
-            await ctx.send(f"No valid arguments provided. Use !tetsuo_help for full options")
+            await ctx.send(f"No valid arguments provided. Use !image_help for full options")
             return
 
         params = processor.merge_params(params)
@@ -594,9 +594,9 @@ async def tetsuo_command(ctx, *args):
         await ctx.send(f"Error: {str(e)}")
 
 @bot.command(name='image_help')
-async def tetsuo_help(ctx):
+async def image_help(ctx):
     embed = discord.Embed(
-        title="Tetsuo Bot Commands",
+        title="Image Generation Bot Commands",
         description="Image effects generator",
         color=discord.Color.purple()
     )
@@ -630,7 +630,7 @@ def main():
     if not DISCORD_TOKEN:
         print("Error: DISCORD_TOKEN not found in .env file")
         return
-    print("Starting Tetsuo bot...")
+    print("Starting Image Generation bot...")
     bot.run(DISCORD_TOKEN)
 
 if __name__ == "__main__":
