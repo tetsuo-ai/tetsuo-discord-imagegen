@@ -1,6 +1,15 @@
 import discord
 from discord.ext import commands
-from PIL import Image, ImageFont, ImageDraw, ImageOps, ImageEnhance, ImageFilter, ImageStat 
+from PIL import (
+    Image, 
+    ImageFont, 
+    ImageDraw, 
+    ImageOps, 
+    ImageEnhance, 
+    ImageFilter, 
+    ImageStat,
+    ImageChops 
+)
 import numpy as np
 from pathlib import Path
 from io import BytesIO
@@ -9,6 +18,7 @@ import os
 import re
 import random
 import colorsys
+import math
 
 # Load environment variables
 load_dotenv()
@@ -31,98 +41,92 @@ EFFECT_ORDER = ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', '
 EFFECT_PRESETS = {
     'cyberpunk': {
         'rgb': (20, 235, 215),
-        'alpha': 180,
-        'chroma': 8,
-        'glitch': 5,
-        'scan': 8,
-        'noise': 0.05
-        },
-    'cyberpunk': {
-        'rgb': (20, 235, 215),  # Cyan with slight adjustment
-        'alpha': 180,
-        'chroma': 8,
-        'glitch': 5,
-        'scan': 8,
-        'noise': 0.05
+        'alpha': 140,
+        'chroma': 5,
+        'glitch': 3,
+        'scan': 80,
+        'noise': 0.03
     },
     'vaporwave': {
-        'rgb': (235, 100, 235),  # Softer pink
-        'alpha': 160,
-        'chroma': 15,
-        'scan': 8,
+        'rgb': (235, 100, 235),
+        'alpha': 120,
+        'chroma': 8,
+        'scan': 100,
         'noise': 0.02
     },
     'glitch_art': {
-        'rgb': (235, 45, 75),  # Warmer red
+        'rgb': (235, 45, 75),
         'alpha': 140,
-        'glitch': 15,
-        'chroma': 20,
-        'noise': 0.1
+        'glitch': 12,
+        'chroma': 15,
+        'scan': 120,
+        'noise': 0.08
     },
     'retro': {
-        'rgb': (65, 215, 95),  # Richer green
-        'alpha': 200,
-        'scan': 8,
-        'noise': 0.05
+        'rgb': (65, 215, 95),
+        'alpha': 160,
+        'scan': 90,
+        'noise': 0.03
     },
     'matrix': {
-        'rgb': (25, 225, 95),  # More muted matrix green
-        'alpha': 160,
-        'scan': 6,
-        'glitch': 3,
-        'noise': 0.03,
-        'chroma': 5
+        'rgb': (25, 225, 95),
+        'alpha': 130,
+        'scan': 70,
+        'glitch': 2,
+        'noise': 0.02,
+        'chroma': 3
     },
     'synthwave': {
-        'rgb': (225, 45, 235),  # Deeper magenta
-        'alpha': 180,
-        'chroma': 10,
-        'scan': 12,
+        'rgb': (225, 45, 235),
+        'alpha': 150,
+        'chroma': 7,
+        'scan': 150,
         'noise': 0.02
     },
     'akira': {
-        'rgb': (235, 25, 65),  # Richer red
-        'alpha': 200,
-        'chroma': 12,
-        'glitch': 8,
-        'scan': 4,
-        'noise': 0.05
+        'rgb': (235, 25, 65),
+        'alpha': 160,
+        'chroma': 8,
+        'glitch': 6,
+        'scan': 180,
+        'noise': 0.03
     },
     'tetsuo': {
-        'rgb': (235, 45, 225),  # Deeper purple-pink
-        'alpha': 220,
-        'chroma': 15,
-        'glitch': 10,
-        'scan': 8,
-        'noise': 0.1,
+        'rgb': (235, 45, 225),
+        'alpha': 160,
+        'chroma': 10,
+        'glitch': 6,
+        'scan': 160,
+        'noise': 0.05,
+        'pulse': 0.15
     },
     'neo_tokyo': {
-        'rgb': (235, 35, 85),  # Richer neon red
-        'alpha': 190,
-        'chroma': 18,
-        'glitch': 12,
-        'scan': 8,
-        'noise': 0.08,
-        'pulse': 0.2
+        'rgb': (235, 35, 85),
+        'alpha': 150,
+        'chroma': 12,
+        'glitch': 8,
+        'scan': 140,
+        'noise': 0.04,
+        'pulse': 0.1
     },
     'psychic': {
-        'rgb': (185, 25, 235),  # Deeper purple
+        'rgb': (185, 25, 235),
         'alpha': 170,
-        'chroma': 25,
-        'glitch': 8,
-        'scan': 4,
-        'noise': 0.05,
-        'energy': 0.3
+        'chroma': 15,
+        'glitch': 5,
+        'scan': 130,
+        'noise': 0.03,
+        'energy': 0.2
     },
     'tetsuo_rage': {
         'rgb': (225, 24, 42),
-        'alpha': 255,
-        'chroma': 40,
-        'glitch': 45,
-        'scan': 4,
-        'noise': 0.3,
-        'energy': 0.3,
-        'pulse': 0.3
+        'alpha': 200,
+        'chroma': 20,
+        'glitch': 25,
+        'scan': 50,
+        'noise': 0.15,
+        'energy': 0.2,
+        'pulse': 0.2
     }
 }
 
@@ -210,15 +214,19 @@ def offset_channel(image, offset_x, offset_y):
     return offset_image
 
 class ImageProcessor:
-    def __init__(self, image_path):
-        if not Path(image_path).exists():
-            raise ValueError(f"Image file not found: {image_path}")
-            
-        if Path(image_path).stat().st_size > MAX_FILE_SIZE:
-            raise ValueError(f"Image file too large (max {MAX_FILE_SIZE/1024/1024}MB)")
-            
+    def __init__(self, image_path, silkscreen=False):
         self.base_image = Image.open(image_path).convert('RGBA')
-        
+        """Initialize processor with optional dual image mode"""
+        if silkscreen:
+            self.base_image = self.apply_silkscreen_effect()
+        else:
+            if not Path(image_path).exists():
+                raise ValueError(f"Image file not found: {image_path}")
+                
+            if Path(image_path).stat().st_size > MAX_FILE_SIZE:
+                raise ValueError(f"Image file too large (max {MAX_FILE_SIZE/1024/1024}MB)")
+                
+        # Size validation applies to both modes
         if not (MIN_IMAGE_SIZE[0] <= self.base_image.size[0] <= MAX_IMAGE_SIZE[0] and 
                 MIN_IMAGE_SIZE[1] <= self.base_image.size[1] <= MAX_IMAGE_SIZE[1]):
             raise ValueError(f"Image dimensions must be between {MIN_IMAGE_SIZE} and {MAX_IMAGE_SIZE}")
@@ -226,6 +234,73 @@ class ImageProcessor:
         self.analyzer = ImageAnalyzer()
         self.analysis = self.analyzer.analyze_image(self.base_image)
         self.adaptive_params = {}
+
+    def apply_silkscreen_effect(self, colors=None, dot_size=5, registration_offset=2):
+        """
+        Creates a denser Warhol-style silkscreen effect while maintaining dot clarity.
+        
+        Args:
+            colors: List of hex colors for the separations. If None, uses defaults
+            dot_size: Base size of halftone dots in pixels
+            registration_offset: Simulated misregistration between color layers
+        """
+        if colors is None:
+            # Maintain muted colors but increase initial density
+            colors = ['#E62020', '#20B020', '#2020E6', '#D4D420']
+        
+        # Increase contrast slightly for better dot density in mid-tones
+        image = self.base_image.convert('L')
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(2.0)  # Increased from 1.8
+        
+        # Start with white background
+        result = Image.new('RGBA', image.size, (255, 255, 255, 255))
+        
+        for i, color in enumerate(colors):
+            r, g, b = tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
+            halftone = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(halftone)
+            
+            # Adjust density factor for better coverage
+            density_factor = 0.8 if color.startswith('#D4') else 1.0  # Increased yellow density
+            
+            for y in range(0, image.size[1], dot_size):
+                for x in range(0, image.size[0], dot_size):
+                    box = (x, y, min(x + dot_size, image.size[0]), 
+                          min(y + dot_size, image.size[1]))
+                    region = image.crop(box)
+                    average = ImageStat.Stat(region).mean[0]
+                    
+                    # Enhanced brightness calculation for better mid-tone coverage
+                    brightness_factor = ((255 - average) / 255.0) ** 0.8  # Added power factor for mid-tone boost
+                    adjusted_brightness = brightness_factor * density_factor
+                    
+                    # Increased dot size factor from 0.4 to 0.6
+                    dot_radius = int(adjusted_brightness * dot_size * 0.4)
+                    
+                    if dot_radius > 0:
+                        # Reduced random offset for tighter pattern
+                        offset_x = random.randint(-1, 1) * 0.5
+                        offset_y = random.randint(-1, 1) * 0.5
+                        center = (x + dot_size//2 + offset_x, 
+                                y + dot_size//2 + offset_y)
+                        
+                        # Increased base opacity
+                        opacity = int(255 * min(adjusted_brightness * 0.9, 1.0))
+                        draw.ellipse([center[0] - dot_radius, 
+                                    center[1] - dot_radius,
+                                    center[0] + dot_radius, 
+                                    center[1] + dot_radius], 
+                                    fill=(r, g, b, opacity))
+            
+            # Apply registration offset
+            offset_x = int((i - len(colors)/2) * registration_offset * 0.8)
+            offset_y = int((i - len(colors)/2) * registration_offset * 0.8)
+            halftone = ImageChops.offset(halftone, offset_x, offset_y)
+            
+            result = Image.alpha_composite(result, halftone)
+        
+        return result
     
     def merge_params(self, user_params):
         """Merge user parameters with adaptive parameters"""
@@ -260,94 +335,168 @@ class ImageProcessor:
         return result
         
     def apply_energy_effect(self, intensity=0.8):
-        """Enhanced energy effect with support for higher intensities"""
+        """Refined energy effect with better visual balance"""
         if not 0 <= intensity <= 2:
             raise ValueError("Energy intensity must be between 0 and 2")
             
         base = self.base_image.convert('RGBA')
         width, height = base.size
         
-        num_lines = int(100 * intensity)
-        line_width = max(2, int(intensity * 3))
+        # Reduced number of lines and increased minimum spacing
+        num_lines = int(50 * intensity)  # Reduced from 100
+        min_spacing = max(10, int(20 * (1 - intensity)))
         
         energy = Image.new('RGBA', base.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(energy)
         
+        prev_points = []
         for _ in range(num_lines):
             x1 = random.randint(0, width)
             y1 = random.randint(0, height)
-            x2 = x1 + random.randint(-200, 200)
-            y2 = y1 + random.randint(-200, 200)
             
-            hue = random.uniform(0.8, 1.0)
-            rgb = tuple(int(x * 255) for x in colorsys.hsv_to_rgb(hue, 1, 1))
-            color = rgb + (min(255, int(200 * intensity)),)
+            # Ensure minimum spacing from previous lines
+            if prev_points and any(abs(x1 - px) + abs(y1 - py) < min_spacing 
+                                 for px, py in prev_points):
+                continue
+                
+            angle = random.uniform(0, 2 * math.pi)
+            length = random.randint(50, 150)
+            x2 = x1 + int(length * math.cos(angle))
+            y2 = y1 + int(length * math.sin(angle))
             
+            # More controlled color selection
+            hue = random.uniform(0.5, 0.7)  # More focused color range
+            saturation = random.uniform(0.8, 1.0)
+            value = random.uniform(0.8, 1.0)
+            rgb = tuple(int(x * 255) for x in colorsys.hsv_to_rgb(hue, saturation, value))
+            
+            alpha = min(200, int(150 * intensity))
+            color = rgb + (alpha,)
+            
+            line_width = max(1, int(2 * intensity))
             draw.line([(x1, y1), (x2, y2)], fill=color, width=line_width)
+            
+            prev_points.append((x1, y1))
+            if len(prev_points) > 5:  # Keep track of last 5 points only
+                prev_points.pop(0)
         
-        blur_radius = min(5, 3 + intensity)
+        # Refined blur based on intensity
+        blur_radius = min(3, 1 + intensity)
         energy = energy.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-        return Image.alpha_composite(base, energy)
+        
+        # Blend more subtly with base image
+        result = Image.blend(base, 
+                           Image.alpha_composite(base, energy), 
+                           min(0.7, intensity * 0.5))
+        
+        return result
 
     def apply_pulse_effect(self, intensity=0.7):
-        """Creates a pulsing light effect"""
+        """Refined pulse effect with better visual integration"""
         if not 0 <= intensity <= 2:
             raise ValueError("Pulse intensity must be between 0 and 2")
             
-        pulse = Image.new('RGBA', self.base_image.size, (0, 0, 0, 0))
+        base = self.base_image.convert('RGBA')
+        pulse = Image.new('RGBA', base.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(pulse)
         
-        width, height = self.base_image.size
-        num_spots = int(20 * intensity)
+        width, height = base.size
+        num_spots = int(10 * intensity)  # Reduced from 20
+        
+        # Calculate image brightness to place pulses in darker areas
+        brightness = ImageStat.Stat(base.convert('L')).mean[0]
         
         for _ in range(num_spots):
             x = random.randint(0, width)
             y = random.randint(0, height)
-            radius = random.randint(20, 50)
             
-            for r in range(radius, 0, -1):
-                alpha = int(255 * (r/radius) * intensity)
+            # Adjust radius based on image brightness
+            base_radius = int(30 * (1 - brightness/255))
+            radius = random.randint(base_radius, base_radius * 2)
+            
+            # Create graduated pulse
+            for r in range(radius, 0, -2):
+                alpha = int(100 * (r/radius) * intensity * (1 - brightness/255))
                 draw.ellipse([x-r, y-r, x+r, y+r], 
                            fill=(255, 255, 255, alpha))
         
-        pulse = pulse.filter(ImageFilter.GaussianBlur(radius=5))
-        return Image.alpha_composite(self.base_image, pulse)
+        # Refined blur and blend
+        pulse = pulse.filter(ImageFilter.GaussianBlur(radius=3))
+        result = Image.blend(base, 
+                           Image.alpha_composite(base, pulse), 
+                           min(0.5, intensity * 0.3))
+        
+        return result
 
-    '''def generate_ascii_art(self, size=50):
+    def generate_ascii_art(self, target_width=100):
+        """
+        Generates ASCII art with proper character spacing and proportions,
+        compensating for monospace font spacing characteristics.
+
+        Args:
+            target_width (int): Desired width in characters
+
+        Returns:
+            PIL.Image.Image: RGB image containing the rendered ASCII art
+        """
+        # Define ASCII characters in increasing order of intensity
         ASCII_CHARS = ' .:-=+*#%@'
-        
+
+        # Convert to grayscale
         image = self.base_image.convert('L')
-        
-        aspect_ratio = image.size[0] / image.size[1]
-        new_width = int(size * 2 * aspect_ratio)
-        image = image.resize((new_width, size), Image.Resampling.LANCZOS)
-        
-        pixels = image.getdata()
-        ascii_str = ''
-        for i, pixel in enumerate(pixels):
-            if i % new_width == 0:
-                ascii_str += '\n'
-            index = int((pixel / 255) * (len(ASCII_CHARS) - 1))
-            ascii_str += ASCII_CHARS[index]
-        
+
+        # Get original dimensions and aspect ratio
+        original_width, original_height = image.size
+        original_aspect_ratio = original_height / original_width
+
+        # Load default font and get character dimensions using getbbox()
         font = ImageFont.load_default()
-        bbox = font.getbbox('A')
+        bbox = font.getbbox('A')  # Get bounding box for a single character
         char_width = bbox[2] - bbox[0]
         char_height = bbox[3] - bbox[1]
-        
-        img_width = new_width * char_width
-        img_height = size * char_height
-        
-        image = Image.new('RGB', (img_width, img_height), color='black')
-        draw = ImageDraw.Draw(image)
-        
-        y = 0
+
+        # Correct aspect ratio with character proportions
+        char_aspect_ratio = char_height / char_width
+        corrected_aspect_ratio = original_aspect_ratio * char_aspect_ratio
+
+        # Calculate target height based on corrected aspect ratio
+        target_height = int(target_width * corrected_aspect_ratio)
+
+        # Resize image to match target dimensions
+        image = image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+        # Convert to numpy array for pixel processing
+        pixels = np.array(image)
+
+        # Generate ASCII string based on pixel intensity
+        ascii_str = ''
+        num_chars = len(ASCII_CHARS)
+        for y in range(target_height):
+            for x in range(target_width):
+                # Map pixel intensity to an ASCII character
+                intensity = pixels[y, x] / 255
+                ascii_str += ASCII_CHARS[int(intensity * (num_chars - 1))]
+            ascii_str += '\n'
+
+        # Calculate output image dimensions
+        padding = 10  # Padding for the rendered image
+        output_width = int(target_width * char_width) + padding * 2
+        output_height = int(target_height * char_height) + padding * 2
+
+        # Create output image
+        output = Image.new('RGB', (output_width, output_height), 'black')
+        draw = ImageDraw.Draw(output)
+
+        # Draw the ASCII art on the output image
+        y = padding
         for line in ascii_str.split('\n'):
-            draw.text((0, y), line, font=font, fill='white')
+            if line.strip():  # Avoid empty lines
+                draw.text((padding, y), line, fill='white', font=font)
             y += char_height
-        
-        return image'''
-   
+
+        return output
+
+
     
     def apply_glitch_effect(self, intensity=10):
         """Enhanced glitch effect with support for higher intensities"""
@@ -450,18 +599,20 @@ class ImageProcessor:
 def parse_discord_args(args):
     result = {}
     args = ' '.join(args)
-    noise_match = re.search(r'--noise\s+(0?\.\d+)(?:\s+--style\s+(film|digital))?', args)
     
-    if noise_match:
-        intensity = float(noise_match.group(1))
-        style = noise_match.group(2) or 'digital'  # Default to digital if style not specified
-        
-        if 0 <= intensity <= 1:
-            result['noise'] = intensity
-            result['noise_style'] = style
+    alpha_match = re.search(r'--alpha\s+(\d+)', args)
+    
+    if alpha_match:
+        alpha = int(alpha_match.group(1))
+        if 0 <= alpha <= 255:
+            result['alpha'] = alpha
         else:
-            raise ValueError("Noise intensity must be between 0 and 1")
-            
+            raise ValueError("Alpha value must be between 0 and 255")
+    else:
+        result['alpha'] = 180  # Default alpha value if not specified
+        
+    if '--silkscreen' in args:
+        result['silkscreen'] = True        
     if '--random' in args:
         images = list(Path(IMAGES_FOLDER).glob('*.*'))
         if not images:
@@ -489,9 +640,9 @@ def parse_discord_args(args):
             raise ValueError("RGB values must be between 0 and 255")
     
     params = {
-        'glitch': (r'--glitch\s+(\d+)', lambda x: 1 <= x <= 50, "Glitch intensity must be between 1 and 50"),
-        'chroma': (r'--chroma\s+(\d+)', lambda x: 1 <= x <= 40, "Chromatic aberration must be between 1 and 40"),
-        'scan': (r'--scan\s+(\d+)', lambda x: 1 <= x <= 20, "Scan line gap must be between 1 and 20"),
+        'glitch': (r'--glitch\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 50, "Glitch intensity must be between 1 and 50"),
+        'chroma': (r'--chroma\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 40, "Chromatic aberration must be between 1 and 40"),
+        'scan': (r'--scan\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 200, "Scan line gap must be between 1 and 200"),
         'noise': (r'--noise\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 2, "Noise intensity must be between 0 and 2"),
         'energy': (r'--energy\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 2, "Energy intensity must be between 0 and 2"),
         'pulse': (r'--pulse\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 2, "Pulse intensity must be between 0 and 2")
@@ -522,16 +673,18 @@ async def on_reaction_add(reaction, user):
             await reaction.message.delete()
 
 @bot.command(name='image')
-async def tetsuo_command(ctx, *args):
+async def image_command(ctx, *args):
     try:
         params = parse_discord_args(args)
+        silkscreen = params.pop('silkscreen', False)  # Extract silkscreen parameter
         image_path = params.pop('image_path', INPUT_IMAGE)
+        
+        # Create processor with dual mode if specified
+        processor = ImageProcessor(image_path, silkscreen=silkscreen)
         
         if not Path(image_path).exists():
             await ctx.send(f"Error: Image '{image_path}' not found!")
             return
-        
-        processor = ImageProcessor(image_path)
         
         if '--ascii' in args:
             result = processor.generate_ascii_art()
