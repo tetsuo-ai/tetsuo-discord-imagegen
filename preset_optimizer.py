@@ -11,6 +11,7 @@ from copy import deepcopy
 
 class DeepPresetOptimizer:
     def __init__(self, test_image_path="input.png", output_dir="preset_analysis"):
+        self.test_image_path = Path(test_image_path).resolve()
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         
@@ -22,9 +23,9 @@ class DeepPresetOptimizer:
         for dir_path in [self.images_dir, self.history_dir, self.generations_dir]:
             dir_path.mkdir(exist_ok=True)
         
-        # Create or verify test image
-        self.test_image_path = Path(test_image_path)
-        self.ensure_test_image()
+        # Verify input image exists
+        if not self.test_image_path.exists():
+            raise FileNotFoundError(f"Input image not found: {self.test_image_path}")
         
         # Parameter variation ranges
         self.variation_ranges = {
@@ -73,7 +74,6 @@ class DeepPresetOptimizer:
             print(f"Created test image with dimensions {width}x{height}")
 
     def evaluate_preset(self, preset_name, params, save_image=False):
-        """Enhanced preset evaluation with more detailed metrics"""
         try:
             if not self.test_image_path.exists():
                 self.ensure_test_image()
@@ -81,7 +81,7 @@ class DeepPresetOptimizer:
             processor = ImageProcessor(str(self.test_image_path))
             result = processor.base_image.convert('RGBA')
             
-            # Apply effects in order
+            # Apply effects
             if 'rgb' in params:
                 r, g, b = params['rgb']
                 alpha = params.get('alpha', 255)
@@ -102,6 +102,12 @@ class DeepPresetOptimizer:
                         result = processor.apply_energy_effect(float(params[effect]))
                     elif effect == 'pulse':
                         result = processor.apply_pulse_effect(float(params[effect]))
+            
+            # Save the processed image regardless of score if save_image is True
+            if save_image:
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                image_path = self.images_dir / f"{preset_name}_{timestamp}.png"
+                result.save(str(image_path))
             
             # Enhanced analysis
             rgb_result = result.convert('RGB')
