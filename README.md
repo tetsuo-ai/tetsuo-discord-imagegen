@@ -1,75 +1,79 @@
-# Tetsuo Image Effect Bot
-
-Discord bot that applies Akira/Tetsuo-inspired visual effects to images with adaptive processing.
+# Tetimi - Tetsuo Image Effect Bot
+A Discord bot that creates cyberpunk-inspired visual effects inspired by Akira and Tetsuo, using intelligent processing to adapt effects based on image content.
 
 ## Features
-
-- Automatic effect adaptation based on image analysis
-- RGB color overlay with smart blending
-- Chromatic aberration and glitch effects
-- Scanline generation with variable intensity
-- Multiple preset styles (cyberpunk, vaporwave, akira, etc.)
-- Random image selection from folder
-- Image validation and safety checks
+- Content-aware processing system that analyzes and adapts effects
+- Dual-layer RGB processing with separate color overlay and colorization effects
+- Advanced visual effects:
+  - Energy patterns with edge detection and dynamic line placement
+  - Pulse effects with adaptive brightness and spatial distribution
+  - Enhanced chromatic aberration with natural distortion falloff
+  - Intelligent glitch effects with controlled chaos
+  - Dynamic scanline generation with glow effects
+  - Noise generation with color preservation
+  - High-quality ASCII art conversion with upscaling option
+  - Silkscreen effect with multi-color separations
+- Comprehensive preset system with fine-tuned combinations
+- Random image selection from designated folder
 
 ## Commands
-
+### Basic Usage
+```bash
+!image [options] - Process image with specified effects
+!image --random - Process random image from folder
+!ascii [options] - Generate ASCII art
+!ascii up random - Generate upscaled ASCII from random image
+!image_help - Display command help
+!ascii_help - Display ASCII conversion help
 ```
-!tetsuo [options]
-!tetsuo_presets - List available presets
-!tetsuo_help - Show help message
-```
 
-### Options
+### Effect Parameters
+- `--preset <name>` - Use preset effect combination
+- `--rgb <r> <g> <b> --rgbalpha <0-255>` - Color overlay
+- `--color <r> <g> <b> --coloralpha <0-255>` - Deep colorization
+- `--glitch <1-50>` - Glitch intensity
+- `--chroma <1-40>` - Chromatic aberration strength
+- `--scan <1-200>` - Scanline gap
+- `--noise <0-2>` - Noise intensity
+- `--energy <0-2>` - Energy effect strength
+- `--pulse <0-2>` - Pulse effect intensity
+- `--silkscreen` - Apply silkscreen effect
 
-- `--preset <name>` - Use predefined effect combination
-- `--rgb R G B` - Custom RGB color values (0-255)
-- `--alpha` - Transparency (0-255)
-- `--chroma` - Chromatic aberration (1-20)
-- `--glitch` - Glitch effect intensity (1-20)
-- `--scan` - Scanline gap (1-10)
-- `--noise` - Noise intensity (0.0-1.0)
-- `--random` - Select random image from images folder
-
-### Examples
-
-```
-!tetsuo --preset akira --random
-!tetsuo --rgb 255 0 0 --glitch 10
-!tetsuo --preset cyberpunk
-```
+### Available Presets
+- `cyberpunk`: Cyan-dominant with dual-layer effects
+- `vaporwave`: Pink-heavy with strong aberration
+- `glitch_art`: Heavy distortion with controlled chaos
+- `retro`: Classic scanline look with subtle coloring
+- `matrix`: Green-tinted cyberpunk style
+- `synthwave`: 80s-inspired magenta effects
+- `akira`: Classic Akira-inspired red tones
+- `tetsuo`: Intense purple with layered effects
+- `neo_tokyo`: Urban cyberpunk with dual RGB processing
+- `psychic`: Psychedelic effect combination
+- `tetsuo_rage`: Maximum intensity on all effects
 
 ## Installation
-
-1. Clone repository
-2. Install requirements: `pip install -r requirements.txt`
-3. Create `.env` file with `DISCORD_TOKEN=your_token`
+1. Clone the repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Create `.env` file with: `DISCORD_TOKEN=your_token_here`
 4. Create `images` folder for input images
 5. Run: `python tetimi.py`
 
-## Image Requirements
+## Effect System
+The bot employs intelligent processing that analyzes images for optimal effect application:
+- Brightness analysis for opacity and pulse placement
+- Edge detection for energy pattern placement
+- Color variance for chromatic aberration strength
+- Image complexity for glitch intensity
+- Contrast analysis for noise distribution
+- Color preservation in all effects
 
-- Formats: PNG, JPEG
-- Size: 50x50 to 2000x2000 pixels
-- Max file size: 8MB
-
-## Effect Parameters
-
-Default user/adaptive weight ratio: 0.7/0.3
-- Brightness impacts alpha strength
-- Image complexity affects glitch intensity
-- Color variance influences chromatic aberration
-- Scan lines adapt to image detail level
-
-## Presets
-
-- `akira`: Red dominant, medium glitch
-- `tetsuo`: Purple dominant, high glitch
-- `cyberpunk`: Cyan accent, low noise
-- `vaporwave`: Pink accent, high chroma
-- `matrix`: Green dominant, light scan lines
-- `synthwave`: Magenta accent, medium effects
+## Contributing
+Issues and pull requests welcome to help improve the bot.
 
 ## License
-
 MIT License
+
+## Credits
+Created by Graceus777, richinseattle for tetsuo-ai
+Inspired by Katsuhiro Otomo's AKIRA
