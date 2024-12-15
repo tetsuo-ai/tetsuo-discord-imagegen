@@ -1,93 +1,79 @@
 # Tetimi - Tetsuo Image Effect Bot
-
-A Discord bot that creates cyberpunk-inspired visual effects inspired by Akira and Tetsuo. The bot uses adaptive processing to analyze images and apply effects that complement the original content.
+A Discord bot that creates cyberpunk-inspired visual effects inspired by Akira and Tetsuo, using intelligent processing to adapt effects based on image content.
 
 ## Features
-
-- Image analysis system that adapts effects based on content
-- Multiple effect types including RGB overlays, glitch effects, and chromatic aberration
-- Sophisticated visual effects including:
-  - Energy patterns with controllable intensity
-  - Pulse effects with adaptive brightness
-  - Enhanced chromatic aberration with color preservation
-  - Advanced glitch effects with controlled randomization
-  - Scanline generation with variable density
-  - Noise effects with color relationship preservation
-- ASCII art generation
-- Silkscreen effect inspired by pop art
-- Multiple preset combinations for different aesthetic styles
-- Support for random image selection from a designated folder
+- Content-aware processing system that analyzes and adapts effects
+- Dual-layer RGB processing with separate color overlay and colorization effects
+- Advanced visual effects:
+  - Energy patterns with edge detection and dynamic line placement
+  - Pulse effects with adaptive brightness and spatial distribution
+  - Enhanced chromatic aberration with natural distortion falloff
+  - Intelligent glitch effects with controlled chaos
+  - Dynamic scanline generation with glow effects
+  - Noise generation with color preservation
+  - High-quality ASCII art conversion with upscaling option
+  - Silkscreen effect with multi-color separations
+- Comprehensive preset system with fine-tuned combinations
+- Random image selection from designated folder
 
 ## Commands
-
 ### Basic Usage
-```
-!image [options] - Process the default or specified image
-!image --random - Process a random image from the images folder
-!image --ascii - Generate ASCII art version
-!image_help - Display help information
+```bash
+!image [options] - Process image with specified effects
+!image --random - Process random image from folder
+!ascii [options] - Generate ASCII art
+!ascii up random - Generate upscaled ASCII from random image
+!image_help - Display command help
+!ascii_help - Display ASCII conversion help
 ```
 
-### Effect Options
-- `--preset <name>` - Use a predefined effect combination
-- `--rgb <r> <g> <b>` - Set RGB color values (0-255)
-- `--alpha <value>` - Set transparency (0-255)
-- `--glitch <1-50>` - Set glitch effect intensity
-- `--chroma <1-40>` - Set chromatic aberration strength
-- `--scan <1-200>` - Set scanline gap
-- `--noise <0-2>` - Set noise intensity
-- `--energy <0-2>` - Add energy effect with specified intensity
-- `--pulse <0-2>` - Add pulse effect with specified intensity
+### Effect Parameters
+- `--preset <name>` - Use preset effect combination
+- `--rgb <r> <g> <b> --rgbalpha <0-255>` - Color overlay
+- `--color <r> <g> <b> --coloralpha <0-255>` - Deep colorization
+- `--glitch <1-50>` - Glitch intensity
+- `--chroma <1-40>` - Chromatic aberration strength
+- `--scan <1-200>` - Scanline gap
+- `--noise <0-2>` - Noise intensity
+- `--energy <0-2>` - Energy effect strength
+- `--pulse <0-2>` - Pulse effect intensity
 - `--silkscreen` - Apply silkscreen effect
 
 ### Available Presets
-- `cyberpunk`: Cyan-dominant with subtle glitch effects
-- `vaporwave`: Pink-heavy with strong chromatic aberration
-- `glitch_art`: Heavy distortion effects
-- `retro`: Classic scanline look
-- `matrix`: Green-tinted cyberpunk aesthetic
+- `cyberpunk`: Cyan-dominant with dual-layer effects
+- `vaporwave`: Pink-heavy with strong aberration
+- `glitch_art`: Heavy distortion with controlled chaos
+- `retro`: Classic scanline look with subtle coloring
+- `matrix`: Green-tinted cyberpunk style
 - `synthwave`: 80s-inspired magenta effects
 - `akira`: Classic Akira-inspired red tones
-- `tetsuo`: Intense purple with strong effects
-- `neo_tokyo`: Urban cyberpunk aesthetic
+- `tetsuo`: Intense purple with layered effects
+- `neo_tokyo`: Urban cyberpunk with dual RGB processing
 - `psychic`: Psychedelic effect combination
-- `tetsuo_rage`: Maximum intensity effects
+- `tetsuo_rage`: Maximum intensity on all effects
 
 ## Installation
-
 1. Clone the repository
-2. Install required packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Create a `.env` file containing:
-   ```
-   DISCORD_TOKEN=your_token_here
-   ```
-4. Create an `images` folder for input images
-5. Run the bot:
-   ```bash
-   python tetimi.py
-   ```
+2. Install dependencies: `pip install -r requirements.txt`
+3. Create `.env` file with: `DISCORD_TOKEN=your_token_here`
+4. Create `images` folder for input images
+5. Run: `python tetimi.py`
 
 ## Effect System
-
-The bot uses an adaptive processing system that analyzes images to optimize effect parameters:
-- Image brightness influences opacity and pulse effects
-- Content complexity affects glitch intensity
-- Color variance impacts chromatic aberration strength
-- Image detail level influences scanline density
-- Contrast levels affect noise distribution
+The bot employs intelligent processing that analyzes images for optimal effect application:
+- Brightness analysis for opacity and pulse placement
+- Edge detection for energy pattern placement
+- Color variance for chromatic aberration strength
+- Image complexity for glitch intensity
+- Contrast analysis for noise distribution
+- Color preservation in all effects
 
 ## Contributing
-
-Feel free to submit issues and pull requests to help improve the bot.
+Issues and pull requests welcome to help improve the bot.
 
 ## License
-
 MIT License
 
 ## Credits
-
 Created by Graceus777, richinseattle for tetsuo-ai
 Inspired by Katsuhiro Otomo's AKIRA
