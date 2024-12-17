@@ -1,5 +1,3 @@
-import discord
-from discord.ext import commands
 from PIL import (
     Image, 
     ImageFont, 
@@ -12,22 +10,13 @@ from PIL import (
 )
 import numpy as np
 from pathlib import Path
-from io import BytesIO
-from dotenv import load_dotenv
-import os
-import re
 import random
 import colorsys
 import math
-import time
-
-# Load environment variables
-load_dotenv()
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-IMAGES_FOLDER = 'images'
-INPUT_IMAGE = 'input.png'
+from typing import Optional, Tuple, Dict, Any, List
 
 
+# Effect order and presets
 EFFECT_ORDER = ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse']
 EFFECT_PRESETS = {
     'cyberpunk': {
@@ -134,16 +123,10 @@ EFFECT_PRESETS = {
         'rgbalpha': 90
     }
 }
-# Set up Discord intents
-intents = discord.Intents.default()
-intents.message_content = True
-intents.reactions = True
-bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
-
 
 class ImageAnalyzer:
     @staticmethod
-    def analyze_image(image):
+    def analyze_image(image: Image.Image) -> Dict[str, float]:
         """Comprehensive image analysis for adaptive processing"""
         if image.mode != 'RGB':
             image = image.convert('RGB')
@@ -167,7 +150,9 @@ class ImageAnalyzer:
         }
     
     @staticmethod
-    def get_adaptive_params(analysis, user_params=None, preset_params=None):
+    def get_adaptive_params(analysis: Dict[str, float], 
+                          user_params: Optional[Dict[str, Any]] = None,
+                          preset_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Generate adaptive parameters based on image analysis"""
         params = {}
         requested_effects = set()
@@ -196,7 +181,7 @@ class ImageAnalyzer:
         
         return params
 
-def offset_channel(image, offset_x, offset_y):
+def offset_channel(image: Image.Image, offset_x: int, offset_y: int) -> Image.Image:
     """Enhanced channel offset with smoother transitions"""
     width, height = image.size
     offset_image = Image.new(image.mode, (width, height), 0)
@@ -218,28 +203,35 @@ def offset_channel(image, offset_x, offset_y):
     return offset_image
 
 class ImageProcessor:
-    def __init__(self, image_path, silkscreen=False):
-        """Initialize processor with optional dual image mode"""
+    def __init__(self, image_path: str, points: bool = False):
+        """Initialize processor with points effect option
+        
+        Args:
+            image_path: Path to input image
+            points: Whether to apply points effect
+        """
+        if not Path(image_path).exists():
+            raise ValueError(f"Image file not found: {image_path}")
+            
         self.base_image = Image.open(image_path).convert('RGBA')
-        if silkscreen:
-            self.base_image = self.apply_silkscreen_effect()
-        else:
-            if not Path(image_path).exists():
-                raise ValueError(f"Image file not found: {image_path}")
+        if points:
+            self.base_image = self.apply_points_effect()
                 
         self.analyzer = ImageAnalyzer()
         self.analysis = self.analyzer.analyze_image(self.base_image)
         self.adaptive_params = {}
 
-    def apply_silkscreen_effect(self, colors=None, dot_size=5, registration_offset=2):
+    def apply_points_effect(self, colors: Optional[List[str]] = None, 
+                          dot_size: int = 6, 
+                          registration_offset: int = 8) -> Image.Image:
+        """Apply points effect to image"""
         if colors is None:
             colors = ['#E62020', '#20B020', '#2020E6', '#D4D420']
         
         image = self.base_image.convert('L')
         enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(2.0)
+        image = enhancer.enhance(2)
         
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
         result = Image.new('RGBA', image.size, (255, 255, 255, 255))
         
         for i, color in enumerate(colors):
@@ -247,7 +239,7 @@ class ImageProcessor:
             halftone = Image.new('RGBA', image.size, (0, 0, 0, 0))
             draw = ImageDraw.Draw(halftone)
             
-            density_factor = 0.8 if color.startswith('#D4') else 1.0
+            density_factor = 0.2 if color.startswith('#D4') else 0.9 if color.startswith('#E6') or color.startswith('#20B') else 0.7
             
             for y in range(0, image.size[1], dot_size):
                 for x in range(0, image.size[0], dot_size):
@@ -259,7 +251,7 @@ class ImageProcessor:
                     brightness_factor = ((255 - average) / 255.0) ** 0.8
                     adjusted_brightness = brightness_factor * density_factor
                     
-                    dot_radius = int(adjusted_brightness * dot_size * 0.4)
+                    dot_radius = int(adjusted_brightness * dot_size * 0.5)
                     
                     if dot_radius > 0:
                         offset_x = random.randint(-1, 1) * 0.5
@@ -281,8 +273,8 @@ class ImageProcessor:
             result = Image.alpha_composite(result, halftone)
         
         return result
-    
-    def merge_params(self, user_params):
+
+    def merge_params(self, user_params: Dict[str, Any]) -> Dict[str, Any]:
         """Merge user parameters with adaptive parameters"""
         preset_name = user_params.get('preset')
         preset_params = EFFECT_PRESETS.get(preset_name, {})
@@ -300,22 +292,147 @@ class ImageProcessor:
         
         merged.update(user_params)
         return merged
-    
-    def add_color_overlay(self, color):
+
+    def add_color_overlay(self, color: Tuple[int, int, int, int]) -> Image.Image:
         """Add subtle color overlay"""
         r, g, b, alpha = color
-        
-        # Normalize alpha to 0-1 range for blending
         blend_alpha = alpha / 255.0
-        
-        # Reduce color intensity to prevent over-coloration
         overlay = Image.new('RGBA', self.base_image.size, (r, g, b, int(alpha * 0.5)))
-        
         result = Image.blend(self.base_image.convert('RGBA'), overlay, blend_alpha * 0.3)
+        return result
+
+    def colorize_non_white(self, r: int, g: int, b: int, alpha: int = 255) -> Image.Image:
+        """Enhanced colorization with more nuanced color blending"""
+        img_array = np.array(self.base_image.convert('RGBA'))
+        glow = img_array.copy()
+        glow[:, :] = [r, g, b, alpha]
+        
+        luminance = np.sum(img_array[:, :, :3] * [0.299, 0.587, 0.114], axis=2)
+        non_white_mask = luminance < 240
+        blend_factor = ((255 - luminance) / 255.0)[:, :, np.newaxis]
+        blend_factor = np.clip(blend_factor * 1.5, 0, 1)
+        
+        result = img_array.copy()
+        result[non_white_mask] = (
+            (1 - blend_factor[non_white_mask]) * img_array[non_white_mask] +
+            blend_factor[non_white_mask] * glow[non_white_mask]
+        ).astype(np.uint8)
+        
+        return Image.fromarray(result)
+
+    def apply_glitch_effect(self, intensity: int = 10) -> Image.Image:
+        """Enhanced glitch effect with support for higher intensities"""
+        if not isinstance(intensity, int) or not 1 <= intensity <= 50:
+            raise ValueError("Glitch intensity must be an integer between 1 and 50")
+            
+        img_array = np.array(self.base_image)
+        result = img_array.copy()
+        
+        iterations = int(intensity * 1.5)
+        
+        for _ in range(iterations):
+            offset = np.random.randint(-20, 20)
+            if offset == 0:
+                continue
+                
+            if offset > 0:
+                result[offset:, :] = img_array[:-offset, :]
+                result[:offset, :] = img_array[-offset:, :]
+            else:
+                offset = abs(offset)
+                result[:-offset, :] = img_array[offset:, :]
+                result[-offset:, :] = img_array[:offset, :]
+            
+            channel = np.random.randint(0, 3)
+            shift = np.random.randint(-10, 11)
+            if shift != 0:
+                temp = np.roll(result[:, :, channel], shift, axis=1)
+                img_array[:, :, channel] = temp
+        
+        return Image.fromarray(result)
+
+    def add_chromatic_aberration(self, offset):
+        """
+        Args:
+            offset (int or tuple): Chromatic aberration offset
+        """
+        # If tuple, use numpy's linspace to generate range
+        if isinstance(offset, tuple):
+            start, end = offset
+            # Convert to list of integers in range
+            offset = np.linspace(start, end, num=10).astype(int)
+        
+        # Validate offset
+        if isinstance(offset, (list, np.ndarray)):
+            offset = [max(1, min(40, val)) for val in offset]
+        elif not isinstance(offset, int) or not 1 <= offset <= 40:
+            raise ValueError("Chromatic aberration offset must be between 1 and 40")
+            
+        # Split into channels
+        r, g, b, a = self.base_image.split()
+        
+        # Calculate exponential offsets for more natural distortion
+        r_offset = int(-offset * (1.0 + math.log(offset/10 + 1, 2)) * 0.8)
+        b_offset = int(offset * (1.0 + math.log(offset/10 + 1, 2)) * 0.8)
+        g_offset = int(offset * math.log(offset/20 + 1, 2) * 0.3)
+        
+        # Apply graduated blur based on offset distance
+        blur_amount = 0.3 + (offset / 40) * 0.7
+        
+        # Process each channel with variable blur
+        r = offset_channel(r, r_offset, 0)
+        r = r.filter(ImageFilter.GaussianBlur(radius=blur_amount))
+        
+        b = offset_channel(b, b_offset, 0)
+        b = b.filter(ImageFilter.GaussianBlur(radius=blur_amount))
+        
+        g = offset_channel(g, g_offset, 0)
+        g = g.filter(ImageFilter.GaussianBlur(radius=blur_amount * 0.5))
+        
+        # Merge with slight alpha adjustment for edge cases
+        result = Image.merge('RGBA', (r, g, b, a))
+        
+        # Enhance edge contrast slightly
+        enhancer = ImageEnhance.Contrast(result)
+        result = enhancer.enhance(1.1)
         
         return result
+    
+    def add_scan_lines(self, gap: int = 2, alpha: int = 128) -> Image.Image:
+        """Enhanced scan lines with variable intensity and subtle glow effect"""
+        width, height = self.base_image.size
+        scan_lines = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(scan_lines)
         
-    def apply_energy_effect(self, intensity=0.8):
+        for y in range(0, height, gap):
+            intensity = int(alpha * (0.7 + 0.3 * random.random()))
+            draw.line([(0, y), (width, y)], fill=(0, 0, 0, intensity))
+            
+            if y > 0:
+                draw.line([(0, y-1), (width, y-1)], 
+                         fill=(0, 0, 0, intensity//2))
+        
+        scan_lines = scan_lines.filter(ImageFilter.GaussianBlur(0.5))
+        return Image.alpha_composite(self.base_image.convert('RGBA'), scan_lines)
+    
+    def add_noise(self, intensity: float = 0.1) -> Image.Image:
+        """Enhanced noise effect with color preservation"""
+        if not isinstance(intensity, (int, float)) or not 0 <= intensity <= 1:
+            raise ValueError("Noise intensity must be between 0 and 1")
+            
+        img_array = np.array(self.base_image)
+        
+        # Generate colored noise
+        noise = np.random.normal(0, intensity * 255, img_array.shape)
+        
+        # Preserve color relationships
+        noise_mask = np.random.random(img_array.shape) > 0.5
+        noisy_image = img_array + (noise * noise_mask)
+        
+        np.clip(noisy_image, 0, 255, out=noisy_image)
+        return Image.fromarray(noisy_image.astype('uint8'))
+
+    def apply_energy_effect(self, intensity: float = 0.8) -> Image.Image:
         """Refined energy effect with intelligent line placement and glow
         
         Args:
@@ -408,7 +525,7 @@ class ImageProcessor:
         
         return result
 
-    def apply_pulse_effect(self, intensity=0.7):
+    def apply_pulse_effect(self, intensity: float = 0.7) -> Image.Image:
         """Enhanced pulse effect with content-aware placement and dynamic sizing
         
         Args:
@@ -515,471 +632,61 @@ class ImageProcessor:
         result = enhancer.enhance(1.1)
         
         return result
-
-    def convertImageToAscii(self, cols=80, scale=0.43, moreLevels=True):
-            gscale1 = "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\|()1{}[]?-_+~<>i!lI;:,\"^`'. "
-            gscale2 = '@%#*+=-:. '
-            
-            image = self.base_image.convert('L')
-            W, H = image.size
-            w = W/cols
-            h = w/scale
-            rows = int(H/h)
-            
-            if cols > W or rows > H:
-                raise ValueError("Image too small for specified columns")
-
-            aimg = []
-            for j in range(rows):
-                y1 = int(j*h)
-                y2 = int((j+1)*h)
-                if j == rows-1:
-                    y2 = H
-                    
-                aimg.append("")
-                for i in range(cols):
-                    x1 = int(i*w)
-                    x2 = int((i+1)*w)
-                    if i == cols-1:
-                        x2 = W
-                        
-                    img = image.crop((x1, y1, x2, y2))
-                    avg = int(np.array(img).mean())
-                    
-                    if moreLevels:
-                        gsval = gscale1[int((avg*69)/255)]
-                    else:
-                        gsval = gscale2[int((avg*9)/255)]
-                    
-                    aimg[j] += gsval
-            
-            return aimg
-    
-    def apply_glitch_effect(self, intensity=10):
-        """Enhanced glitch effect with support for higher intensities"""
-        if not isinstance(intensity, int) or not 1 <= intensity <= 50:
-            raise ValueError("Glitch intensity must be an integer between 1 and 50")
-            
-        img_array = np.array(self.base_image)
-        result = img_array.copy()
+    def apply_effect(self, effect_name: str, params: dict) -> Image.Image:
+        """Apply named effect with parameters"""
+        if effect_name == 'rgb':
+            return self.colorize_non_white(*params['rgb'], params.get('rgbalpha', 255))
+        elif effect_name == 'color':
+            return self.add_color_overlay((*params['color'], params.get('coloralpha', 255)))
+        elif effect_name == 'glitch':
+            return self.apply_glitch_effect(params['glitch'])
+        elif effect_name == 'chroma':
+            return self.add_chromatic_aberration(params['chroma'])
+        elif effect_name == 'scan':
+            return self.add_scan_lines(params['scan'])
+        elif effect_name == 'noise':
+            return self.add_noise(params['noise'])
+        elif effect_name == 'energy':
+            return self.apply_energy_effect(params['energy'])
+        elif effect_name == 'pulse':
+            return self.apply_pulse_effect(params['pulse'])
+        return self.base_image    
+    def convertImageToAscii(self, cols: int = 80, scale: float = 0.43, moreLevels: bool = True) -> List[str]:
+        """Convert image to ASCII art"""
+        gscale1 = "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\|()1{}[]?-_+~<>i!lI;:,\"^`'. "
+        gscale2 = '@%#*+=-:. '
         
-        iterations = int(intensity * 1.5)
+        image = self.base_image.convert('L')
+        W, H = image.size
+        w = W/cols
+        h = w/scale
+        rows = int(H/h)
         
-        for _ in range(iterations):
-            offset = np.random.randint(-20, 20)
-            if offset == 0:
-                continue
+        if cols > W or rows > H:
+            raise ValueError("Image too small for specified columns")
+
+        aimg = []
+        for j in range(rows):
+            y1 = int(j*h)
+            y2 = int((j+1)*h)
+            if j == rows-1:
+                y2 = H
                 
-            if offset > 0:
-                result[offset:, :] = img_array[:-offset, :]
-                result[:offset, :] = img_array[-offset:, :]
-            else:
-                offset = abs(offset)
-                result[:-offset, :] = img_array[offset:, :]
-                result[-offset:, :] = img_array[:offset, :]
-            
-            channel = np.random.randint(0, 3)
-            shift = np.random.randint(-10, 11)
-            if shift != 0:
-                temp = np.roll(result[:, :, channel], shift, axis=1)
-                img_array[:, :, channel] = temp
-        
-        return Image.fromarray(result)
-    def colorize_non_white(self, r, g, b, alpha=255):
-        """Enhanced colorization with more nuanced color blending"""
-        img_array = np.array(self.base_image.convert('RGBA'))
-        
-        glow = img_array.copy()
-        glow[:, :] = [r, g, b, alpha]
-        
-        luminance = np.sum(img_array[:, :, :3] * [0.299, 0.587, 0.114], axis=2)
-        non_white_mask = luminance < 240
-        blend_factor = ((255 - luminance) / 255.0)[:, :, np.newaxis]
-        blend_factor = np.clip(blend_factor * 1.5, 0, 1)
-        
-        result = img_array.copy()
-        result[non_white_mask] = (
-            (1 - blend_factor[non_white_mask]) * img_array[non_white_mask] +
-            blend_factor[non_white_mask] * glow[non_white_mask]
-        ).astype(np.uint8)
-        
-        return Image.fromarray(result)
-    
-    def add_chromatic_aberration(self, offset=10):
-        """Enhanced chromatic aberration with natural distortion falloff
-        
-        Args:
-            offset (int): Base offset amount (1-40)
-            
-        Returns:
-            PIL.Image: Processed image with chromatic aberration effect
-        """
-        if not isinstance(offset, int) or not 1 <= offset <= 40:
-            raise ValueError("Chromatic aberration offset must be between 1 and 40")
-            
-        # Split into channels
-        r, g, b, a = self.base_image.split()
-        
-        # Calculate exponential offsets for more natural distortion
-        r_offset = int(-offset * (1.0 + math.log(offset/10 + 1, 2)) * 0.8)
-        b_offset = int(offset * (1.0 + math.log(offset/10 + 1, 2)) * 0.8)
-        g_offset = int(offset * math.log(offset/20 + 1, 2) * 0.3)
-        
-        # Apply graduated blur based on offset distance
-        blur_amount = 0.3 + (offset / 40) * 0.7
-        
-        # Process each channel with variable blur
-        r = offset_channel(r, r_offset, 0)
-        r = r.filter(ImageFilter.GaussianBlur(radius=blur_amount))
-        
-        b = offset_channel(b, b_offset, 0)
-        b = b.filter(ImageFilter.GaussianBlur(radius=blur_amount))
-        
-        g = offset_channel(g, g_offset, 0)
-        g = g.filter(ImageFilter.GaussianBlur(radius=blur_amount * 0.5))
-        
-        # Merge with slight alpha adjustment for edge cases
-        result = Image.merge('RGBA', (r, g, b, a))
-        
-        # Enhance edge contrast slightly
-        enhancer = ImageEnhance.Contrast(result)
-        result = enhancer.enhance(1.1)
-        
-        return result
-    
-    def add_scan_lines(self, gap=2, alpha=128):
-        """Enhanced scan lines with variable intensity and subtle glow effect"""
-        width, height = self.base_image.size
-        scan_lines = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(scan_lines)
-        
-        for y in range(0, height, gap):
-            intensity = int(alpha * (0.7 + 0.3 * random.random()))
-            draw.line([(0, y), (width, y)], fill=(0, 0, 0, intensity))
-            
-            if y > 0:
-                draw.line([(0, y-1), (width, y-1)], 
-                         fill=(0, 0, 0, intensity//2))
-        
-        scan_lines = scan_lines.filter(ImageFilter.GaussianBlur(0.5))
-        return Image.alpha_composite(self.base_image.convert('RGBA'), scan_lines)
-    
-    def add_noise(self, intensity=0.1):
-        """Enhanced noise effect with color preservation"""
-        if not isinstance(intensity, (int, float)) or not 0 <= intensity <= 1:
-            raise ValueError("Noise intensity must be between 0 and 1")
-            
-        img_array = np.array(self.base_image)
-        
-        # Generate colored noise
-        noise = np.random.normal(0, intensity * 255, img_array.shape)
-        
-        # Preserve color relationships
-        noise_mask = np.random.random(img_array.shape) > 0.5
-        noisy_image = img_array + (noise * noise_mask)
-        
-        np.clip(noisy_image, 0, 255, out=noisy_image)
-        return Image.fromarray(noisy_image.astype('uint8'))
-
-def parse_discord_args(args):
-    result = {}
-    args = ' '.join(args)
-    
-    # Alpha handling
-    alpha_match = re.search(r'--alpha\s+(\d+)', args)
-    
-    if alpha_match:
-        alpha = int(alpha_match.group(1))
-        if 0 <= alpha <= 255:
-            result['alpha'] = alpha
-        else:
-            raise ValueError("Alpha value must be between 0 and 255")
-    else:
-        result['alpha'] = 180  # Default alpha value if not specified
-        
-    if '--silkscreen' in args:
-        result['silkscreen'] = True        
-    if '--random' in args:
-        images = list(Path(IMAGES_FOLDER).glob('*.*'))
-        if not images:
-            raise ValueError(f"No images found in {IMAGES_FOLDER}")
-        result['image_path'] = str(random.choice(images))
-    
-    preset_match = re.search(r'--preset\s+(\w+)', args)
-    if preset_match:
-        preset_name = preset_match.group(1).lower()
-        if preset_name in EFFECT_PRESETS:
-            result.update(EFFECT_PRESETS[preset_name])
-            return result
-        raise ValueError(f"Unknown preset. Available presets: {', '.join(EFFECT_PRESETS.keys())}")
-    
-    match = re.search(r'--(rgb|color)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+--\1alpha\s+(\d+))?', args)
-    if match:
-        color_type = match.group(1)  # Either 'rgb' or 'color'
-        r, g, b = map(int, match.groups()[1:4])
-        alpha = int(match.group(5)) if match.group(5) else 255
-        
-        if all(0 <= x <= 255 for x in [r, g, b, alpha]):
-            result[color_type] = (r, g, b)
-            result[f'{color_type}alpha'] = alpha
-        else:
-            raise ValueError("Color/Alpha values must be between 0 and 255")
-    
-    # Other parameter handling
-    params = {
-        'glitch': (r'--glitch\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 50, "Glitch intensity must be between 1 and 50"),
-        'chroma': (r'--chroma\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 40, "Chromatic aberration must be between 1 and 40"),
-        'scan': (r'--scan\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 200, "Scan line gap must be between 1 and 200"),
-        'noise': (r'--noise\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 2, "Noise intensity must be between 0 and 2"),
-        'energy': (r'--energy\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 2, "Energy intensity must be between 0 and 2"),
-        'pulse': (r'--pulse\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 2, "Pulse intensity must be between 0 and 2")
-    }
-    
-    for param, (pattern, validator, error_msg) in params.items():
-        match = re.search(pattern, args)
-        if match:
-            value = float(match.group(1)) if param in ['noise', 'energy', 'pulse'] else int(match.group(1))
-            if validator(value):
-                result[param] = value
-            else:
-                raise ValueError(error_msg)
-    
-    return result
-
-@bot.event
-async def on_ready():
-    print(f'Image generation bot is online as {bot.user}')
-    print(f"Using input image: {INPUT_IMAGE}")
-    if not Path(INPUT_IMAGE).exists():
-        print(f"Warning: Input image '{INPUT_IMAGE}' not found!")
-
-@bot.event
-async def on_reaction_add(reaction, user):
-    if user != bot.user and str(reaction.emoji) == "🗑️":
-        if reaction.message.author == bot.user:
-            await reaction.message.delete()
-
-@bot.command(name='image')
-async def image_command(ctx, *args):
-    try:
-        params = parse_discord_args(args)
-        silkscreen = params.pop('silkscreen', False)
-        image_path = params.pop('image_path', INPUT_IMAGE)
-        
-        processor = ImageProcessor(image_path, silkscreen=silkscreen)
-        
-        if not Path(image_path).exists():
-            await ctx.send(f"Error: Image '{image_path}' not found!")
-            return
-        
-        if '--ascii' in args:
-            result = processor.generate_discord_ascii()
-            output = BytesIO()
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            result.save(output, format='PNG', quality=95)
-            output.seek(0)
-            await ctx.send(file=discord.File(fp=output, filename=f'{timestamp}_tetimi_ascii.png'))
-            return
-            
-        if not params:
-            presets_list = '\n'.join([f"- {name}: {', '.join(f'{k}={v}' for k, v in effects.items())}" 
-                                    for name, effects in EFFECT_PRESETS.items()])
-            await ctx.send(f"No valid arguments provided. Use !image_help for full options")
-            return
-
-        params = processor.merge_params(params)
-        result = processor.base_image.convert('RGBA')
-        
-        for effect in EFFECT_ORDER:
-            if effect not in params:
-                continue
-            
-            processor.base_image = result.copy()
-            if effect == 'rgb':
-                r, g, b = params['rgb']
-                alpha = params.get('rgbalpha', 255)  # Use rgbalpha specifically
-                result = processor.add_color_overlay((r, g, b, alpha))
-            elif effect == 'color':
-                r, g, b = params['color']  # Use color params
-                alpha = params.get('coloralpha', 255)  # Use coloralpha
-                result = processor.colorize_non_white(r, g, b, alpha)  # Pass alpha
-            elif effect == 'energy' and 'energy' in params:
-                result = processor.apply_energy_effect(params['energy'])
-            elif effect == 'pulse' and 'pulse' in params:
-                result = processor.apply_pulse_effect(params['pulse'])
-            elif effect == 'glitch':
-                glitch_result = processor.apply_glitch_effect(params['glitch'])
-                if glitch_result.mode != 'RGBA':
-                    glitch_result = glitch_result.convert('RGBA')
-                result = glitch_result
-            elif effect == 'chroma':
-                result = processor.add_chromatic_aberration(params['chroma'])
-
-            elif effect == 'scan':
-                result = processor.add_scan_lines(params['scan'])
-            elif effect == 'noise':
-                processor.base_image = result.copy()
-                noise_result = processor.add_noise(params['noise'])
-                if noise_result.mode != 'RGBA':
-                    noise_result = noise_result.convert('RGBA')
-                result = noise_result
-
-        output = BytesIO()
-        result.save(output, format='PNG')
-        output.seek(0)
-        
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_tetimi.png"
-        
-        message = await ctx.send(file=discord.File(fp=output, filename=filename))
-        await message.add_reaction("🗑️")
-        
-    except Exception as e:
-        await ctx.send(f"Error: {str(e)}")
-
-
-@bot.command(name='ascii')
-async def ascii_art(ctx, *args):
-    try:
-        image_path = INPUT_IMAGE
-        upscale = False
-        
-        # Process arguments
-        if 'random' in args:
-            images = list(Path(IMAGES_FOLDER).glob('*.*'))
-            if not images:
-                await ctx.send(f"Error: No images found in {IMAGES_FOLDER}")
-                return
-            image_path = str(random.choice(images))
-        
-        if 'up' in args:
-            upscale = True
-            
-        if not Path(image_path).exists():
-            await ctx.send(f"Error: Image '{image_path}' not found!")
-            return
+            aimg.append("")
+            for i in range(cols):
+                x1 = int(i*w)
+                x2 = int((i+1)*w)
+                if i == cols-1:
+                    x2 = W
+                    
+                img = image.crop((x1, y1, x2, y2))
+                avg = int(np.array(img).mean())
                 
-        processor = ImageProcessor(image_path)
-        
-        if upscale:
-            # 4x upscale with enhancements
-            original_size = processor.base_image.size
-            new_size = (original_size[0] * 4, original_size[1] * 4)
-            
-            # Convert and enhance
-            img = processor.base_image.convert('RGB')
-            
-            # Enhance contrast
-            enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.2)
-            
-            # Enhance sharpness
-            enhancer = ImageEnhance.Sharpness(img)
-            img = enhancer.enhance(1.3)
-            
-            # High quality upscale
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
-            processor.base_image = img
-            
-            # Use higher columns for upscaled image
-            cols = 160
-        else:
-            cols = 80
-        
-        # Generate ASCII
-        ascii_lines = processor.convertImageToAscii(cols=cols, scale=0.43, moreLevels=True)
-        
-        # Create output file
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        output_filename = f"{timestamp}_tetimi_ascii.txt"
-        
-        with open(output_filename, 'w', encoding='utf-8') as f:
-            f.write(f"// Image: {Path(image_path).name}\n")
-            if upscale:
-                f.write(f"// Upscaled 4x with enhancements\n")
-                f.write(f"// Original size: {original_size[0]}x{original_size[1]}\n")
-                f.write(f"// New size: {new_size[0]}x{new_size[1]}\n")
-            f.write(f"// Columns: {cols}\n")
-            f.write(f"// Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            
-            for row in ascii_lines:
-                f.write(row + '\n')
+                if moreLevels:
+                    gsval = gscale1[int((avg*69)/255)]
+                else:
+                    gsval = gscale2[int((avg*9)/255)]
                 
-        # Send file
-        await ctx.send(
-            content=f"ASCII art generated from {Path(image_path).name}" + 
-                    (" (4x upscaled)" if upscale else ""),
-            file=discord.File(output_filename)
-        )
+                aimg[j] += gsval
         
-        # Cleanup
-        try:
-            os.remove(output_filename)
-        except Exception as e:
-            print(f"Warning: Could not remove temporary file {output_filename}: {e}")
-        
-    except Exception as e:
-        await ctx.send(f"Error: {str(e)}")
-
-@bot.command(name='ascii_help')
-async def ascii_help(ctx):
-    embed = discord.Embed(
-        title="ASCII Art Generator Commands",
-        description="Convert images to ASCII art",
-        color=discord.Color.purple()
-    )
-    
-    embed.add_field(
-        name="Basic Usage",
-        value="!ascii - Convert default image\n" +
-              "!ascii up - 4x upscale with enhancements\n" +
-              "!ascii random - Use random image\n" +
-              "!ascii up random - Random image with upscale",
-        inline=False
-    )
-    
-    await ctx.send(embed=embed)
-
-
-@bot.command(name='image_help')
-async def image_help(ctx):
-    embed = discord.Embed(
-        title="Image Generation Bot Commands",
-        description="Image effects generator",
-        color=discord.Color.purple()
-    )
-    
-    embed.add_field(
-        name="Basic Usage",
-        value="!image [options] - Process default image\nimage --random - Process random Akira image",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="Presets",
-        value="--preset [name]\nAvailable: cyberpunk, vaporwave, glitch_art, retro, matrix, synthwave, akira, tetsuo, neo_tokyo, psychic, tetsuo_rage",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="Effect Options",
-        value="--rgb [r] [g] [b] --alpha [0-255]\n--glitch [1-50]\n--chroma [1-40]\n--scan [1-20]\n--noise [0-2]\n--energy [0-2]\n--pulse [0-2]",
-        inline=False
-    )
-
-    await ctx.send(embed=embed)
-
-def hex_to_rgba(hex_color):
-    """Convert hex color to RGBA tuple"""
-    hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4)) + (255,)
-
-def main():
-    if not DISCORD_TOKEN:
-        print("Error: DISCORD_TOKEN not found in .env file")
-        return
-    print("Starting Image Generation bot...")
-    bot.run(DISCORD_TOKEN)
-
-if __name__ == "__main__":
-    main()
+        return aimg
