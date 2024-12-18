@@ -11,12 +11,12 @@ import sys
 import tempfile
 import random
 from PIL import Image
-from tetimi import ImageProcessor, EFFECT_PRESETS
+from tetimi import ImageProcessor, EFFECT_PRESETS, EFFECT_ORDER
 from artrepo import ArtRepository
 from anims import AnimationProcessor 
 import io
 from artrepo import ArtRepository
-
+from typing import Dict, Any
 
 if sys.platform.startswith('win'):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -36,7 +36,7 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 # Initialize the ArtRepository globally
 art_repo = ArtRepository(db_path="art_repository.db", storage_path="art_storage")
     
-def parse_discord_args(args):
+def parse_discord_args(args, IMAGES_FOLDER: str = "images", EFFECT_PRESETS: Dict = None, ANIMATION_PRESETS: Dict = None) -> Dict[str, Any]:
     """Parse command arguments with enhanced animation support"""
     result = {}
     args = ' '.join(args)
@@ -44,32 +44,34 @@ def parse_discord_args(args):
     # Add animate flag handling
     if '--animate' in args:
         result['animate'] = True
-        #only check for frames and fps if animate is true
         if '--frames' in args:
             frames_match = re.search(r'--frames\s+(\d+)', args)
             if frames_match:
                 result['frames'] = min(int(frames_match.group(1)), 120)
             else:
                 result['frames'] = 30
+        else:
+            result['frames'] = 30
+            
         if '--fps' in args:
             fps_match = re.search(r'--fps\s+(\d+)', args)
             if fps_match:
-                result['fps'] = min(int(fps_match.group(1)), 60)  # Cap at 60fps
+                result['fps'] = min(int(fps_match.group(1)), 60)
             else:
-                result['fps'] = 24  # Default
+                result['fps'] = 24
+        else:
+            result['fps'] = 24
     
     # Animation preset handling (separate from effect presets)
     anim_preset_match = re.search(r'--style\s+(\w+)', args)
-    if anim_preset_match:
+    if anim_preset_match and ANIMATION_PRESETS:
         preset_name = anim_preset_match.group(1).lower()
         if preset_name in ANIMATION_PRESETS:
             result['style'] = preset_name
         else:
             raise ValueError(f"Unknown animation preset. Available: {', '.join(ANIMATION_PRESETS.keys())}")
     
-
-    
-    # Alpha handling (existing code)
+    # Alpha handling
     alpha_match = re.search(r'--alpha\s+(\d+)', args)
     if alpha_match:
         alpha = int(alpha_match.group(1))
@@ -78,9 +80,9 @@ def parse_discord_args(args):
         else:
             raise ValueError("Alpha value must be between 0 and 255")
     else:
-        result['alpha'] = 180  # Default alpha value
+        result['alpha'] = 180
         
-    # Points effect handling (existing code)
+    # Points effect handling
     if '--points' in args:
         result['points'] = True
         dot_match = re.search(r'--dot-size\s+(\d+)', args)
@@ -90,23 +92,24 @@ def parse_discord_args(args):
         if reg_match:
             result['registration_offset'] = int(reg_match.group(1))
     
-    # Random image handling (existing code)
+    # Random image handling
     if '--random' in args:
         images = list(Path(IMAGES_FOLDER).glob('*.*'))
         if not images:
             raise ValueError(f"No images found in {IMAGES_FOLDER}")
         result['image_path'] = str(random.choice(images))
     
-    # Effect preset handling (separate from animation presets)
-    preset_match = re.search(r'--preset\s+(\w+)', args)
-    if preset_match:
-        preset_name = preset_match.group(1).lower()
-        if preset_name in EFFECT_PRESETS:
-            result.update(EFFECT_PRESETS[preset_name])
-            return result
-        raise ValueError(f"Unknown effect preset. Available: {', '.join(EFFECT_PRESETS.keys())}")
+    # Effect preset handling
+    if EFFECT_PRESETS:
+        preset_match = re.search(r'--preset\s+(\w+)', args)
+        if preset_match:
+            preset_name = preset_match.group(1).lower()
+            if preset_name in EFFECT_PRESETS:
+                result.update(EFFECT_PRESETS[preset_name])
+                return result
+            raise ValueError(f"Unknown effect preset. Available: {', '.join(EFFECT_PRESETS.keys())}")
     
-    # Color parameter handling (existing code)
+    # Color parameter handling
     match = re.search(r'--(rgb|color)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+--\1alpha\s+(\d+))?', args)
     if match:
         color_type = match.group(1)
@@ -119,7 +122,7 @@ def parse_discord_args(args):
         else:
             raise ValueError("Color/Alpha values must be between 0 and 255")
     
-    # Effect parameter handling (existing code)
+    # Effect parameter handling
     params = {
         'glitch': (r'--glitch\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 50, 
                   "Glitch intensity must be between 1 and 50"),
@@ -132,13 +135,15 @@ def parse_discord_args(args):
         'energy': (r'--energy\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 1, 
                   "Energy intensity must be between 0 and 1"),
         'pulse': (r'--pulse\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 1, 
-                 "Pulse intensity must be between 0 and 1")
+                 "Pulse intensity must be between 0 and 1"),
+        'consciousness': (r'--consciousness\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 1,
+                        "Consciousness intensity must be between 0 and 1")
     }
     
     for param, (pattern, validator, error_msg) in params.items():
         match = re.search(pattern, args)
         if match:
-            value = float(match.group(1)) if param in ['noise', 'energy', 'pulse'] else int(match.group(1))
+            value = float(match.group(1))  # Now all effect parameters are handled as floats
             if validator(value):
                 result[param] = value
             else:
@@ -158,64 +163,74 @@ async def on_reaction_add(reaction, user):
     if user != bot.user and str(reaction.emoji) == "🗑️":
         if reaction.message.author == bot.user:
             await reaction.message.delete()
-
+            
 @bot.command(name='image')
 async def image_command(ctx, *args):
     try:
+        # Parse arguments
         params = parse_discord_args(args)
         animate = params.pop('animate', False)
-        image_path = params.pop('image_path', INPUT_IMAGE)
-
+        
+        # Handle image input
         if ctx.message.attachments:
+            # If attachment exists, use it
             with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
                 await ctx.message.attachments[0].save(tmp.name)
                 image_path = tmp.name
+        elif 'image_path' in params:
+            # This comes from --random flag
+            image_path = params['image_path']
+        else:
+            # Default to INPUT_IMAGE if no attachment or random
+            image_path = INPUT_IMAGE
 
         if not Path(image_path).exists():
             await ctx.send(f"Error: Image not found!")
             return
 
-        # Process base image with effects
-        processor = ImageProcessor(image_path)
-        result = processor.base_image.convert('RGBA')
-
-        # Apply effects in order
-        for effect in ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse']:
-            if effect not in params:
-                continue
-            processor.base_image = result.copy()
-            result = processor.apply_effect(effect, params)
-
         if animate:
             await ctx.send("Generating animation...")
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                result.save(tmp.name)
-                anim = AnimationProcessor(tmp.name)
+            processor = AnimationProcessor(image_path)
+            frames = processor.generate_frames(
+                preset_name=params.get('style', ''),
+                num_frames=params.get('frames', 30)
+            )
+            video = processor.create_video(frame_rate=params.get('fps', 24))
+            
+            if video and video.exists():
+                await ctx.send(file=discord.File(str(video)))
+            else:
+                await ctx.send("Failed to generate animation")
                 
-                frames = params.get('frames', 30)
-                fps = params.get('fps', 24)
-                style = params.get('style', 'glitch_surge')
-                
-                frames = anim.generate_frames(preset_name=style, num_frames=frames)
-                video = anim.create_video(frame_rate=fps)
-                
-                if video and video.exists():
-                    await ctx.send(file=discord.File(str(video)))
-                else:
-                    await ctx.send("Failed to generate animation")
-                    
-                os.unlink(tmp.name)
         else:
+            # Process single image
+            processor = ImageProcessor(image_path)
+            result = processor.base_image
+            
+            # Apply effects in order
+            for effect in EFFECT_ORDER:
+                if effect in params:
+                    processor.base_image = result
+                    result = processor.apply_effect(effect, params)
+
+            # Save and send result
             output = BytesIO()
             result.save(output, format='PNG')
             output.seek(0)
+            
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             filename = f"{timestamp}_tetimi.png"
             message = await ctx.send(file=discord.File(fp=output, filename=filename))
             await message.add_reaction("🗑️")
 
+        # Cleanup temporary file if it was created
+        if ctx.message.attachments and 'tmp' in locals():
+            os.unlink(tmp.name)
+
     except Exception as e:
         await ctx.send(f"Error: {str(e)}")
+
+
 
 @bot.command(name='testanimate')
 async def test_animate(ctx):
@@ -281,6 +296,7 @@ async def help_command(ctx):
             "--noise [0-1]\n"
             "--energy [0-1]\n"
             "--pulse [0-1]"
+            "--consciousness [0-1]" 
         ),
         inline=False
     )
@@ -303,28 +319,87 @@ async def help_command(ctx):
 
 
 @bot.command(name='store')
-async def store_artwork(ctx, title: str = None, *tags):
-    """Store artwork with an optional title and tags"""
+async def store_artwork(ctx, *, details: str = ""):
+    """Store artwork with title, tags, and description
+    Usage: !store "Title" #tag1 #tag2 Description here"""
     if not ctx.message.attachments:
-        await ctx.send("Please attach an image!")
+        await ctx.send("Please attach an image!\n"
+                      "Usage: !store \"Title\" #tag1 #tag2 Description here")
         return
+
+    # Parse metadata from details
+    metadata = {}
     
-    # If no title provided, use filename
-    if not title:
-        title = Path(ctx.message.attachments[0].filename).stem
+    # Look for title in quotes
+    title_match = re.search(r'"([^"]+)"', details)
+    if title_match:
+        metadata['title'] = title_match.group(1)
+    else:
+        # Use filename as title if no title provided
+        metadata['title'] = Path(ctx.message.attachments[0].filename).stem
         
-    # If no tags provided, use title words as tags
-    if not tags:
-        tags = title.lower().split()
-    
-    artwork_id = art_repo.store_artwork(
-        image=await ctx.message.attachments[0].read(),
-        title=title,
-        creator_id=str(ctx.author.id),
-        creator_name=ctx.author.name,
-        tags=list(tags)
-    )
-    await ctx.send(f"Artwork stored! ID: {artwork_id}")
+    # Look for tags after #
+    tags = re.findall(r'#(\w+)', details)
+    if tags:
+        metadata['tags'] = tags
+    else:
+        # Use title words as tags if no tags provided
+        metadata['tags'] = metadata['title'].lower().split()
+        
+    # Everything else becomes description
+    desc_text = re.sub(r'"[^"]+"', '', details)  # Remove title
+    desc_text = re.sub(r'#\w+', '', desc_text)   # Remove tags
+    desc_text = desc_text.strip()
+    if desc_text:
+        metadata['description'] = desc_text
+
+    try:
+        # Store the artwork
+        artwork_id = art_repo.store_artwork(
+            image=await ctx.message.attachments[0].read(),
+            title=metadata['title'],
+            creator_id=str(ctx.author.id),
+            creator_name=ctx.author.name,
+            tags=metadata['tags'],
+            description=metadata.get('description', '')
+        )
+
+        # Create confirmation embed
+        embed = discord.Embed(
+            title="Artwork Stored Successfully",
+            description=f"ID: {artwork_id}",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="Title",
+            value=metadata['title'],
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Tags",
+            value=", ".join(metadata['tags']) if metadata['tags'] else "None",
+            inline=False
+        )
+        
+        if 'description' in metadata:
+            embed.add_field(
+                name="Description",
+                value=metadata['description'],
+                inline=False
+            )
+            
+        embed.set_footer(text=f"Created by {ctx.author.name}")
+
+        # Send confirmation with thumbnail of stored image
+        message = await ctx.send(embed=embed)
+        
+        # Add reaction for deletion
+        await message.add_reaction("🗑️")
+
+    except Exception as e:
+        await ctx.send(f"Error storing artwork: {str(e)}")
 
 
 
@@ -387,57 +462,152 @@ async def process_and_store(ctx, *args):
     except Exception as e:
         await ctx.send(f"Error processing artwork: {str(e)}")
 
+@bot.command(name='update')
+async def update_artwork(ctx, artwork_id: str, *, details: str = ""):
+    """Update artwork metadata like title, tags, or description"""
+    try:
+        # First check if user is the creator
+        _, metadata = art_repo.get_artwork(artwork_id)
+        if str(ctx.author.id) != metadata['creator_id']:
+            await ctx.send("You can only update your own artwork!")
+            return
 
+        # Parse update details
+        updates = {}
+        
+        # Look for title in quotes
+        title_match = re.search(r'"([^"]+)"', details)
+        if title_match:
+            updates['title'] = title_match.group(1)
+            
+        # Look for tags after #
+        tags = re.findall(r'#(\w+)', details)
+        if tags:
+            updates['tags'] = tags
+            
+        # Everything else becomes description
+        desc_text = re.sub(r'"[^"]+"', '', details)  # Remove title
+        desc_text = re.sub(r'#\w+', '', desc_text)   # Remove tags
+        desc_text = desc_text.strip()
+        if desc_text:
+            updates['description'] = desc_text
+
+        if not updates:
+            await ctx.send("No updates provided! Use:\n"
+                         "- Title in quotes: \"New Title\"\n"
+                         "- Tags with #: #tag1 #tag2\n"
+                         "- Remaining text becomes description")
+            return
+
+        # Apply updates
+        art_repo.update_artwork(artwork_id, **updates)
+        
+        # Confirm updates
+        update_msg = "Updated artwork:\n"
+        if 'title' in updates:
+            update_msg += f"- Title: {updates['title']}\n"
+        if 'tags' in updates:
+            update_msg += f"- Tags: {', '.join(updates['tags'])}\n"
+        if 'description' in updates:
+            update_msg += f"- Description: {updates['description']}\n"
+            
+        await ctx.send(update_msg)
+
+    except Exception as e:
+        await ctx.send(f"Error updating artwork: {str(e)}")
+
+@bot.command(name='history')
+async def show_history(ctx, artwork_id: str):
+    """Show modification history of artwork"""
+    try:
+        history = art_repo.get_artwork_history(artwork_id)
+        original, metadata = art_repo.get_artwork(artwork_id)
+        
+        embed = discord.Embed(
+            title=f"History for {metadata['title']}",
+            description=f"Original creator: {metadata['creator_name']}",
+            color=discord.Color.purple()
+        )
+        
+        # Add original creation
+        embed.add_field(
+            name="Original Creation",
+            value=f"Created by {metadata['creator_name']}\n"
+                 f"Tags: {', '.join(metadata['tags'])}",
+            inline=False
+        )
+        
+        # Add modifications
+        for entry in history:
+            # Format timestamp
+            timestamp = datetime.fromtimestamp(entry['timestamp'])
+            time_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Get modifier name
+            modifier = await bot.fetch_user(int(entry['modifier']))
+            
+            # Format changes
+            changes = []
+            if 'title' in entry['changes']:
+                changes.append(f"Title → {entry['changes']['title']}")
+            if 'tags' in entry['changes']:
+                changes.append(f"Tags → {', '.join(entry['changes']['tags'])}")
+            if 'description' in entry['changes']:
+                changes.append(f"Description updated")
+            
+            embed.add_field(
+                name=f"Modified {time_str}",
+                value=f"By: {modifier.name}\n"
+                     f"Changes: {', '.join(changes)}",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        await ctx.send(f"Error getting history: {str(e)}")
 
 
 @bot.command(name='remix')
 async def remix_artwork(ctx, artwork_id: str, *args):
-    """Apply effects to existing artwork"""
+    """Remix an existing artwork with new effects"""
     try:
-        # Fetch the original artwork from the repository
+        # Get the original artwork
         original_image, metadata = art_repo.get_artwork(artwork_id)
-
-        # Initialize the ImageProcessor with the original artwork
-        processor = ImageProcessor(original_image)
-
-        # Parse arguments to identify which effects to apply
+        
+        # Parse the new effect parameters
         params = parse_discord_args(args)
+        
+        # Create processor with original image
+        processor = ImageProcessor(original_image)
+        result = processor.base_image
+        
+        # Apply new effects
+        for effect in EFFECT_ORDER:
+            if effect in params:
+                processor.base_image = result
+                result = processor.apply_effect(effect, params)
 
-        # Check if there's an attachment to use as the remix base image
-        if ctx.message.attachments:
-            attachment = ctx.message.attachments[0]
-            image_bytes = await attachment.read()
-            base_image = Image.open(io.BytesIO(image_bytes))  # Open the image from bytes
-            processor.base_image = base_image  # Set the base image to the attachment
-            
-        # Process the image (apply effects)
-        result = processor.convert_to_rgba()  # Start with the original image (converted to RGBA)
-
-        # Apply effects in order
-        for effect in ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse']:
-            if effect not in params:
-                continue
-            processor.base_image = result.copy()
-            result = processor.apply_effect(effect, params)
-
-        # Store the remixed image
-        new_artwork_id = art_repo.store_artwork(
-            image=result,
-            title=f"Remix_{metadata['title']}",
-            creator=str(ctx.author.id),
-            parent_id=artwork_id,
-            tags=['remix'],
-            parameters=params
-        )
-
-        # Save the processed image to a BytesIO object
-        output = io.BytesIO()
+        # Save result to BytesIO
+        output = BytesIO()
         result.save(output, format='PNG')
         output.seek(0)
 
-        # Send the remixed image back to the user
+        # Store as new artwork with reference to original
+        new_artwork_id = art_repo.store_artwork(
+            image=output,
+            title=f"Remix of {metadata['title']}",
+            creator_id=str(ctx.author.id),
+            creator_name=ctx.author.name,
+            parent_id=artwork_id,  # Link to original
+            tags=['remix'] + list(params.keys()),  # Add applied effects as tags
+            parameters=params  # Store effect parameters
+        )
+
+        # Send the remixed image
         await ctx.send(
-            f"Artwork remixed! New ID: {new_artwork_id}\nOriginal by: <@{metadata['creator']}>",
+            f"Remixed artwork {artwork_id}! New ID: {new_artwork_id}\n"
+            f"Original by: {metadata['creator_name']}",
             file=discord.File(fp=output, filename=f"{new_artwork_id}.png")
         )
 
@@ -495,31 +665,6 @@ async def show_trending(ctx):
         await ctx.send(f"Error getting trending artwork: {str(e)}")
 
 
-@bot.command(name='history')
-async def show_history(ctx, artwork_id: str):
-    """Show modification history of artwork"""
-    try:
-        history = art_repo.get_artwork_history(artwork_id)
-        original, metadata = art_repo.get_artwork(artwork_id)
-        
-        embed = discord.Embed(
-            title=f"History for {metadata['title']}",
-            description=f"Original creator: <@{metadata['creator']}>",
-            color=discord.Color.purple()
-        )
-        
-        for version in history:
-            modifier = await bot.fetch_user(int(version['modifier']))
-            embed.add_field(
-                name=f"Version {version['version']}",
-                value=f"Modified by: {modifier.name}\nTimestamp: <t:{int(version['timestamp'])}:R>",
-                inline=False
-            )
-        
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        await ctx.send(f"Error getting artwork history: {str(e)}")
 
 @bot.event
 async def on_shutdown():

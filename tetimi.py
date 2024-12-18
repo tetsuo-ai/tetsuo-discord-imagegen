@@ -13,11 +13,11 @@ from pathlib import Path
 import random
 import colorsys
 import math
-from typing import Optional, Tuple, Dict, Any, List
-
+from typing import Optional, Tuple, Dict, Any, List, Union
+from io import BytesIO
 
 # Effect order and presets
-EFFECT_ORDER = ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse']
+EFFECT_ORDER = ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse', 'consciousness']
 EFFECT_PRESETS = {
     'cyberpunk': {
         'rgb': (20, 235, 215),
@@ -125,6 +125,7 @@ EFFECT_PRESETS = {
 }
 
 class ImageAnalyzer:
+    
     @staticmethod
     def analyze_image(image: Image.Image) -> Dict[str, float]:
         """Comprehensive image analysis for adaptive processing"""
@@ -203,20 +204,34 @@ def offset_channel(image: Image.Image, offset_x: int, offset_y: int) -> Image.Im
     return offset_image
 
 class ImageProcessor:
-    def __init__(self, image_path: str, points: bool = False):
-        """Initialize processor with points effect option
+    def __init__(self, image_input: Union[str, bytes, Image.Image, BytesIO], points: bool = False):
+        """
+        Initialize image processor with standardized input handling and points effect option
         
         Args:
-            image_path: Path to input image
-            points: Whether to apply points effect
+            image_input: Input image in various formats (path, bytes, PIL Image, or BytesIO)
+            points: Whether to apply points effect during initialization
         """
-        if not Path(image_path).exists():
-            raise ValueError(f"Image file not found: {image_path}")
+        # First handle the various input types
+        if isinstance(image_input, str):
+            self.base_image = Image.open(image_input)
+        elif isinstance(image_input, bytes):
+            self.base_image = Image.open(BytesIO(image_input))
+        elif isinstance(image_input, Image.Image):
+            self.base_image = image_input
+        elif isinstance(image_input, BytesIO):
+            self.base_image = Image.open(image_input)
+        else:
+            raise ValueError("Unsupported image input type")
             
-        self.base_image = Image.open(image_path).convert('RGBA')
+        # Convert to RGBA for consistency
+        self.base_image = self.base_image.convert('RGBA')
+        
+        # Apply points effect if requested
         if points:
             self.base_image = self.apply_points_effect()
                 
+        # Initialize analysis components
         self.analyzer = ImageAnalyzer()
         self.analysis = self.analyzer.analyze_image(self.base_image)
         self.adaptive_params = {}
@@ -293,13 +308,27 @@ class ImageProcessor:
         merged.update(user_params)
         return merged
 
+
     def add_color_overlay(self, color: Tuple[int, int, int, int]) -> Image.Image:
-        """Add subtle color overlay"""
+        if len(color) != 4:
+            raise ValueError("Color tuple must have 4 values: (r, g, b, alpha).")
+
         r, g, b, alpha = color
-        blend_alpha = alpha / 255.0
-        overlay = Image.new('RGBA', self.base_image.size, (r, g, b, int(alpha * 0.5)))
-        result = Image.blend(self.base_image.convert('RGBA'), overlay, blend_alpha * 0.3)
+        
+        # Ensure alpha is within the range of 0 to 255
+        alpha = max(0, min(255, alpha))
+
+        # Calculate blend_alpha based on the original alpha
+        blend_alpha = (alpha / 255.0) * 0.2  # Apply blending ratio with alpha
+
+        # Create an overlay with modified alpha for the transparency effect
+        overlay = Image.new('RGBA', self.base_image.size, (r, g, b, int(alpha * 0.3)))
+
+        # Blend the base image with the overlay
+        result = Image.blend(self.base_image.convert('RGBA'), overlay, blend_alpha)
+
         return result
+
 
     def colorize_non_white(self, r: int, g: int, b: int, alpha: int = 255) -> Image.Image:
         """Enhanced colorization with more nuanced color blending"""
@@ -320,15 +349,15 @@ class ImageProcessor:
         
         return Image.fromarray(result)
 
-    def apply_glitch_effect(self, intensity: int = 10) -> Image.Image:
+    def apply_glitch_effect(self, intensity: float = 10.0) -> Image.Image:
         """Enhanced glitch effect with support for higher intensities"""
-        if not isinstance(intensity, int) or not 1 <= intensity <= 50:
-            raise ValueError("Glitch intensity must be an integer between 1 and 50")
+        if not 1.0 <= float(intensity) <= 50.0:
+            raise ValueError("Glitch intensity must be between 1 and 50")
             
         img_array = np.array(self.base_image)
         result = img_array.copy()
         
-        iterations = int(intensity * 1.5)
+        iterations = int(float(intensity) * 1.5)
         
         for _ in range(iterations):
             offset = np.random.randint(-20, 20)
@@ -350,22 +379,19 @@ class ImageProcessor:
                 img_array[:, :, channel] = temp
         
         return Image.fromarray(result)
-
     def add_chromatic_aberration(self, offset):
         """
         Args:
-            offset (int or tuple): Chromatic aberration offset
+            offset (float or tuple): Chromatic aberration offset
         """
         # If tuple, use numpy's linspace to generate range
         if isinstance(offset, tuple):
-            start, end = offset
-            # Convert to list of integers in range
-            offset = np.linspace(start, end, num=10).astype(int)
+            start, end = float(offset[0]), float(offset[1])
+            offset = np.linspace(start, end, num=10)
         
-        # Validate offset
-        if isinstance(offset, (list, np.ndarray)):
-            offset = [max(1, min(40, val)) for val in offset]
-        elif not isinstance(offset, int) or not 1 <= offset <= 40:
+        # Convert to float and validate
+        offset = float(offset)
+        if not 1.0 <= offset <= 40.0:
             raise ValueError("Chromatic aberration offset must be between 1 and 40")
             
         # Split into channels
@@ -389,23 +415,24 @@ class ImageProcessor:
         g = offset_channel(g, g_offset, 0)
         g = g.filter(ImageFilter.GaussianBlur(radius=blur_amount * 0.5))
         
-        # Merge with slight alpha adjustment for edge cases
         result = Image.merge('RGBA', (r, g, b, a))
         
-        # Enhance edge contrast slightly
         enhancer = ImageEnhance.Contrast(result)
         result = enhancer.enhance(1.1)
         
         return result
     
-    def add_scan_lines(self, gap: int = 2, alpha: int = 128) -> Image.Image:
+    def add_scan_lines(self, gap: float = 2.0, alpha: float = 128.0) -> Image.Image:
         """Enhanced scan lines with variable intensity and subtle glow effect"""
         width, height = self.base_image.size
         scan_lines = Image.new('RGBA', (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(scan_lines)
         
-        for y in range(0, height, gap):
-            intensity = int(alpha * (0.7 + 0.3 * random.random()))
+        # Convert gap to int for range stepping
+        int_gap = max(1, int(gap))
+        
+        for y in range(0, height, int_gap):
+            intensity = int(float(alpha) * (0.7 + 0.3 * random.random()))
             draw.line([(0, y), (width, y)], fill=(0, 0, 0, intensity))
             
             if y > 0:
@@ -433,93 +460,72 @@ class ImageProcessor:
         return Image.fromarray(noisy_image.astype('uint8'))
 
     def apply_energy_effect(self, intensity: float = 0.8) -> Image.Image:
-        """Refined energy effect with intelligent line placement and glow
+        """Optimized energy effect for animation support
         
         Args:
             intensity (float): Effect intensity (0-2)
-            
+                
         Returns:
             PIL.Image: Processed image with energy effect
         """
         if not 0 <= intensity <= 2:
             raise ValueError("Energy intensity must be between 0 and 2")
-            
+                
+        # Convert to RGBA
         base = self.base_image.convert('RGBA')
         width, height = base.size
-        
-        # Create edge map for intelligent line placement
-        edges = base.filter(ImageFilter.FIND_EDGES)
-        edge_data = np.array(edges.convert('L'))
         
         # Create energy layer
         energy = Image.new('RGBA', base.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(energy)
         
-        # Calculate dynamic number of lines based on image size and intensity
-        base_lines = int(min(width, height) * 0.15)
-        num_lines = int(base_lines * intensity)
+        # Simplified line generation for animation
+        num_lines = int(min(width, height) * 0.15 * intensity)
         
-        # Track line positions for spacing
-        line_positions = []
+        # Predefined color range for performance
+        hues = np.linspace(0.5, 0.7, num_lines)  # Blue to purple range
+        saturations = np.full(num_lines, 0.9)
+        values = np.full(num_lines, 0.9)
         
-        # Generate lines with improved placement
-        for _ in range(num_lines):
-            # Find areas with strong edges
-            edge_positions = np.where(edge_data > 50)
-            if len(edge_positions[0]) > 0:
-                # Randomly select from edge points
-                idx = np.random.randint(len(edge_positions[0]))
-                x1 = edge_positions[1][idx]
-                y1 = edge_positions[0][idx]
-            else:
-                # Fallback to random position
-                x1 = random.randint(0, width)
-                y1 = random.randint(0, height)
+        # Generate all colors at once
+        colors = [
+            tuple(int(x * 255) for x in colorsys.hsv_to_rgb(h, s, v))
+            for h, s, v in zip(hues, saturations, values)
+        ]
+        
+        # Generate lines more efficiently
+        for i in range(num_lines):
+            # Random positions
+            x1 = random.randint(0, width)
+            y1 = random.randint(0, height)
             
-            # Check spacing from existing lines
-            if line_positions and any(abs(x1 - x) + abs(y1 - y) < 20 for x, y in line_positions):
-                continue
-                
-            # Calculate dynamic line properties
+            # Calculate line properties
             angle = random.uniform(0, 2 * math.pi)
             length = random.randint(int(30 * intensity), int(100 * intensity))
             
-            # Generate end point
+            # Calculate end point
             x2 = x1 + int(length * math.cos(angle))
             y2 = y1 + int(length * math.sin(angle))
             
-            # Generate color with controlled randomness
-            hue = random.uniform(0.5, 0.7)  # Blue to purple range
-            saturation = random.uniform(0.8, 1.0)
-            value = random.uniform(0.8, 1.0)
-            rgb = tuple(int(x * 255) for x in colorsys.hsv_to_rgb(hue, saturation, value))
-            
-            # Calculate alpha based on edge strength
-            edge_strength = edge_data[y1, x1] / 255.0
-            base_alpha = int(180 * intensity)
-            alpha = int(base_alpha * (0.5 + 0.5 * edge_strength))
+            # Get color and alpha
+            rgb = colors[i]
+            alpha = int(180 * intensity)
             color = rgb + (alpha,)
             
-            # Draw line with dynamic width
-            line_width = max(1, int(3 * intensity * (0.5 + 0.5 * edge_strength)))
+            # Draw main line
+            line_width = max(1, int(3 * intensity))
             draw.line([(x1, y1), (x2, y2)], fill=color, width=line_width)
             
-            # Add glow effect
-            glow_radius = int(line_width * 2)
-            for r in range(glow_radius, 0, -1):
-                glow_alpha = int(alpha * (r / glow_radius) * 0.3)
-                glow_color = rgb + (glow_alpha,)
-                draw.line([(x1, y1), (x2, y2)], fill=glow_color, width=line_width + r * 2)
-            
-            line_positions.append((x1, y1))
-            if len(line_positions) > 10:
-                line_positions.pop(0)
+            # Simplified glow (just one layer)
+            glow_color = rgb + (int(alpha * 0.3),)
+            draw.line([(x1, y1), (x2, y2)], 
+                     fill=glow_color, 
+                     width=line_width + 4)
         
-        # Apply graduated blur
-        blur_radius = 1 + intensity
-        energy = energy.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        # Optimized blur
+        energy = energy.filter(ImageFilter.GaussianBlur(radius=1))
         
-        # Blend with base image using overlay mode
+        # Blend with base image
         blend_factor = min(0.7, intensity * 0.4)
         result = Image.blend(base, Image.alpha_composite(base, energy), blend_factor)
         
@@ -650,6 +656,8 @@ class ImageProcessor:
             return self.apply_energy_effect(params['energy'])
         elif effect_name == 'pulse':
             return self.apply_pulse_effect(params['pulse'])
+        elif effect_name == 'consciousness':
+            return self.apply_consciousness_effect(params['consciousness'])
         return self.base_image    
     def convertImageToAscii(self, cols: int = 80, scale: float = 0.43, moreLevels: bool = True) -> List[str]:
         """Convert image to ASCII art"""
@@ -690,3 +698,62 @@ class ImageProcessor:
                 aimg[j] += gsval
         
         return aimg
+    def apply_consciousness_effect(self, intensity: float = 0.5) -> Image.Image:
+        """Apply consciousness-warping effect that creates a dreamlike, fluid distortion
+        
+        Args:
+            intensity: Effect intensity between 0 and 1
+            
+        Returns:
+            Processed image with consciousness effect
+        """
+        if not 0 <= intensity <= 1:
+            raise ValueError("Consciousness intensity must be between 0 and 1")
+            
+        # Create base displacement maps
+        width, height = self.base_image.size
+        x_displacement = np.zeros((height, width), dtype=np.float32)
+        y_displacement = np.zeros((height, width), dtype=np.float32)
+        
+        # Generate fluid, organic distortion
+        freq = 5 + intensity * 15  # Higher intensity = more frequent waves
+        amplitude = intensity * 20  # Controls distortion strength
+        
+        for y in range(height):
+            for x in range(width):
+                # Create organic, flowing distortion using sine waves
+                wave1 = math.sin(x / freq + y / (freq * 1.5)) * amplitude
+                wave2 = math.cos(y / freq + x / (freq * 1.5)) * amplitude
+                wave3 = math.sin((x + y) / (freq * 2)) * amplitude * 0.5
+                
+                x_displacement[y, x] = wave1 + wave3
+                y_displacement[y, x] = wave2 - wave3
+        
+        # Convert image to numpy array for processing
+        img_array = np.array(self.base_image)
+        
+        # Create output array
+        output = np.zeros_like(img_array)
+        
+        # Apply displacement with bounds checking
+        for y in range(height):
+            for x in range(width):
+                # Calculate displaced coordinates
+                new_x = int(x + x_displacement[y, x])
+                new_y = int(y + y_displacement[y, x])
+                
+                # Ensure coordinates are within bounds
+                new_x = max(0, min(width - 1, new_x))
+                new_y = max(0, min(height - 1, new_y))
+                
+                # Copy pixel from source to output
+                output[y, x] = img_array[new_y, new_x]
+        
+        # Convert back to PIL Image
+        result = Image.fromarray(output)
+        
+        # Add subtle glow effect
+        glow = result.filter(ImageFilter.GaussianBlur(radius=2 * intensity))
+        result = Image.blend(result, glow, 0.3 * intensity)
+        
+        return result
