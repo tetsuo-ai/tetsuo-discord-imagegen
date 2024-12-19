@@ -15,6 +15,13 @@ import colorsys
 import math
 from typing import Optional, Tuple, Dict, Any, List, Union
 from io import BytesIO
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+IMAGES_FOLDER = 'images'
+INPUT_IMAGE = 'input.png'
 
 # Effect order and presets
 EFFECT_ORDER = ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse', 'consciousness']
@@ -351,7 +358,7 @@ class ImageProcessor:
 
     def apply_glitch_effect(self, intensity: float = 10.0) -> Image.Image:
         """Enhanced glitch effect with support for higher intensities"""
-        if not 1.0 <= float(intensity) <= 50.0:
+        if not 0.0 <= float(intensity) <= 50.0:
             raise ValueError("Glitch intensity must be between 1 and 50")
             
         img_array = np.array(self.base_image)
@@ -391,7 +398,7 @@ class ImageProcessor:
         
         # Convert to float and validate
         offset = float(offset)
-        if not 1.0 <= offset <= 40.0:
+        if not 0.0 <= offset <= 40.0:
             raise ValueError("Chromatic aberration offset must be between 1 and 40")
             
         # Split into channels
@@ -443,20 +450,65 @@ class ImageProcessor:
         return Image.alpha_composite(self.base_image.convert('RGBA'), scan_lines)
     
     def add_noise(self, intensity: float = 0.1) -> Image.Image:
-        """Enhanced noise effect with color preservation"""
+        """Enhanced noise effect with spatial coherence and smoother transitions
+        
+        Args:
+            intensity: Noise intensity between 0 and 1
+            
+        Returns:
+            PIL.Image: Image with enhanced noise effect
+        """
         if not isinstance(intensity, (int, float)) or not 0 <= intensity <= 1:
             raise ValueError("Noise intensity must be between 0 and 1")
             
         img_array = np.array(self.base_image)
+        height, width = img_array.shape[:2]
         
-        # Generate colored noise
-        noise = np.random.normal(0, intensity * 255, img_array.shape)
+        # Create base noise at lower resolution for spatial coherence
+        scale_factor = 4
+        small_height = height // scale_factor
+        small_width = width // scale_factor
         
-        # Preserve color relationships
-        noise_mask = np.random.random(img_array.shape) > 0.5
-        noisy_image = img_array + (noise * noise_mask)
+        # Generate multiple noise layers with different frequencies
+        base_noise = np.random.normal(0, 1, (small_height, small_width, img_array.shape[2]))
+        detail_noise = np.random.normal(0, 0.5, (small_height, small_width, img_array.shape[2]))
+        fine_noise = np.random.normal(0, 0.25, (height, width, img_array.shape[2]))
         
-        np.clip(noisy_image, 0, 255, out=noisy_image)
+        # Smooth the base noise layers
+        from scipy.ndimage import gaussian_filter
+        base_noise = gaussian_filter(base_noise, sigma=1.5)
+        detail_noise = gaussian_filter(detail_noise, sigma=0.8)
+        
+        # Resize smoothed noise back to original dimensions
+        from scipy.ndimage import zoom
+        base_noise = zoom(base_noise, (scale_factor, scale_factor, 1))
+        detail_noise = zoom(detail_noise, (scale_factor, scale_factor, 1))
+        
+        # Combine noise layers with different weights
+        combined_noise = (
+            base_noise * 0.8 +
+            detail_noise * 0.5 +
+            fine_noise * 0.2
+        )
+        
+        # Normalize noise to desired intensity range
+        noise_range = np.max(np.abs(combined_noise))
+        if noise_range > 0:
+            combined_noise = combined_noise / noise_range * (intensity * 255)
+        
+        # Create noise mask with smooth transitions
+        mask = np.random.random(img_array.shape)
+        mask = gaussian_filter(mask, sigma=1.0)
+        mask = mask > 0.3  # Adjust threshold for noise density
+        
+        # Apply noise selectively based on image brightness
+        image_brightness = np.mean(img_array, axis=2, keepdims=True) / 255.0
+        brightness_factor = np.clip(1.0 - image_brightness * 0.5, 0.3, 1.0)
+        
+        # Combine everything
+        noisy_image = img_array + (combined_noise * mask * brightness_factor)
+        noisy_image = np.clip(noisy_image, 0, 255)
+        
         return Image.fromarray(noisy_image.astype('uint8'))
 
     def apply_energy_effect(self, intensity: float = 0.8) -> Image.Image:
