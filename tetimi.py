@@ -170,8 +170,8 @@ class ImageAnalyzer:
         if preset_params:
             requested_effects.update(preset_params.keys())
         
-        if 'alpha' in requested_effects:
-            params['alpha'] = int(255 * (1.0 - (analysis['brightness'] * 0.7 + 
+        if 'coloralpha' in requested_effects:
+            params['coloralpha'] = int(255 * (1.0 - (analysis['brightness'] * 0.7 + 
                                                analysis['contrast'] * 0.3)))
         
         if 'glitch' in requested_effects:
@@ -207,7 +207,12 @@ def offset_channel(image: Image.Image, offset_x: int, offset_y: int) -> Image.Im
     else:
         offset_image = image.copy()
     
+    # Apply Gaussian Blur
     offset_image = offset_image.filter(ImageFilter.GaussianBlur(0.5))
+    
+    # Ensure the resulting image has the same size as the original
+    offset_image = offset_image.resize((width, height), Image.ANTIALIAS)
+    
     return offset_image
 
 class ImageProcessor:

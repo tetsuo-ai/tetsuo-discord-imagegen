@@ -151,13 +151,13 @@ def parse_discord_args(args, IMAGES_FOLDER: str = "images", EFFECT_PRESETS: Dict
     
     # Effect parameter handling - can override preset values
     params = {
-        'glitch': (r'--glitch\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 50, 
-                  "Glitch intensity must be between 1 and 50"),
-        'chroma': (r'--chroma\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 40, 
-                  "Chromatic aberration must be between 1 and 40"),
-        'scan': (r'--scan\s+(\d*\.?\d+)', lambda x: 1 <= float(x) <= 200, 
-                "Scan line gap must be between 1 and 200"),
-        'noise': (r'--noise\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 1, 
+        'glitch': (r'--glitch\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 50, 
+                  "Glitch intensity must be between 0 and 50"),
+        'chroma': (r'--chroma\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 40, 
+                  "Chromatic aberration must be between 0 and 40"),
+        'scan': (r'--scan\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 200, 
+                "Scan line gap must be between 0 and 200"),
+        'noise': (r'--noise\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 10, 
                  "Noise intensity must be between 0 and 1"),
         'energy': (r'--energy\s+(\d*\.?\d+)', lambda x: 0 <= float(x) <= 1, 
                   "Energy intensity must be between 0 and 1"),
