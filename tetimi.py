@@ -213,7 +213,7 @@ def offset_channel(image: Image.Image, offset_x: int, offset_y: int) -> Image.Im
     offset_image = offset_image.filter(ImageFilter.GaussianBlur(0.5))
     
     # Ensure the resulting image has the same size as the original
-    offset_image = offset_image.resize((width, height), Image.ANTIALIAS)
+    offset_image = offset_image.resize((width, height), Image.Resampling.LANCZOS)
     
     return offset_image
 
