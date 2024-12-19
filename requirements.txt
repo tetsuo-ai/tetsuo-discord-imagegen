@@ -1,4 +1,21 @@
-discord
-pillow
-numpy
-python-dotenv
+# Core dependencies
+Pillow>=10.1.0
+numpy>=1.24.0
+discord.py>=2.3.2
+python-dotenv>=1.0.0
+
+# Image processing
+opencv-python>=4.8.0
+scikit-image>=0.21.0
+
+# Animation and video
+ffmpeg-python>=0.2.0
+
+# Database
+SQLAlchemy>=2.0.23
+aiosqlite>=0.19.0
+
+# Development tools
+black>=23.11.0
+pylint>=3.0.2
+pytest>=7.4.3
