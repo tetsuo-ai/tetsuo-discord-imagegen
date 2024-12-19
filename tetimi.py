@@ -17,6 +17,8 @@ from typing import Optional, Tuple, Dict, Any, List, Union
 from io import BytesIO
 from dotenv import load_dotenv
 import os
+from scipy.ndimage import gaussian_filter
+
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -453,7 +455,7 @@ class ImageProcessor:
         
         scan_lines = scan_lines.filter(ImageFilter.GaussianBlur(0.5))
         return Image.alpha_composite(self.base_image.convert('RGBA'), scan_lines)
-    
+
     def add_noise(self, intensity: float = 0.1) -> Image.Image:
         """Enhanced noise effect with spatial coherence and smoother transitions
         
@@ -480,14 +482,12 @@ class ImageProcessor:
         fine_noise = np.random.normal(0, 0.25, (height, width, img_array.shape[2]))
         
         # Smooth the base noise layers
-        from scipy.ndimage import gaussian_filter
         base_noise = gaussian_filter(base_noise, sigma=1.5)
         detail_noise = gaussian_filter(detail_noise, sigma=0.8)
         
-        # Resize smoothed noise back to original dimensions
-        from scipy.ndimage import zoom
-        base_noise = zoom(base_noise, (scale_factor, scale_factor, 1))
-        detail_noise = zoom(detail_noise, (scale_factor, scale_factor, 1))
+        # Resize smoothed noise layers to the original image size (avoiding zoom)
+        base_noise = np.resize(base_noise, (height, width, img_array.shape[2]))
+        detail_noise = np.resize(detail_noise, (height, width, img_array.shape[2]))
         
         # Combine noise layers with different weights
         combined_noise = (
@@ -515,6 +515,7 @@ class ImageProcessor:
         noisy_image = np.clip(noisy_image, 0, 255)
         
         return Image.fromarray(noisy_image.astype('uint8'))
+
 
     def apply_energy_effect(self, intensity: float = 0.8) -> Image.Image:
         """Optimized energy effect for animation support
