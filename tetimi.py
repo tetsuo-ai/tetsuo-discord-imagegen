@@ -151,6 +151,7 @@ class EffectParameters:
 
 # Effect order and presets
 EFFECT_ORDER = [
+    "impact",
     "rgb",
     "color",
     "glitch",
@@ -160,7 +161,6 @@ EFFECT_ORDER = [
     "energy",
     "pulse",
     "consciousness",
-    "impact",
     "channel_pass",
 ]
 

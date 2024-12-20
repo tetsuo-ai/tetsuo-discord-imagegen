@@ -133,7 +133,8 @@ def parse_discord_args(args, IMAGES_FOLDER: str = "images") -> dict:
         if not images:
             raise ValueError(f"No images found in {IMAGES_FOLDER}")
         result['image_path'] = str(random.choice(images))
-    
+        print("Image selected: ", result['image_path'])
+
     # Effect parameter handling with keyframe support
     params = {
         'glitch': (r'--glitch(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 50,
@@ -345,11 +346,13 @@ async def image(ctx, *args):
     """Process image with effects and optional animation"""
     try:
         
+        image_path = INPUT_IMAGE
+
         # Handle image input
         if ctx.message.attachments:
             image_input = await ctx.message.attachments[0].read()
         else:
-            if 'random' in args:
+            if '--random' in args:
                 images = list(Path(IMAGES_FOLDER).glob('*.*'))
                 if not images:
                     await ctx.send(f"Error: No images found in {IMAGES_FOLDER}")
@@ -357,7 +360,7 @@ async def image(ctx, *args):
             if not Path("input.png").exists():
                 await ctx.send("No image provided and input.png not found!")
                 return
-            image_input = "input.png"
+            image_input = image_path
         
         # Parse arguments
         params = parse_discord_args(args)
