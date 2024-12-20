@@ -359,6 +359,8 @@ class ImageProcessor:
 
         return Image.fromarray(arr)
 
+    # Make the memes!
+
     def apply_impact_text(self, text: str) -> Image.Image:
         # Open the image and convert it to RGBA mode
         impact_image = self.base_image.copy().convert("RGBA")
