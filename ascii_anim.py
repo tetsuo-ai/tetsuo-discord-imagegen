@@ -1,111 +1,197 @@
-from PIL import Image
-import time
-import os
-from typing import List, Union, Optional
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+from typing import List, Union, Optional, Dict, Any, Tuple
 from io import BytesIO
 import tempfile
-import shutil
 from pathlib import Path
 import logging
-from tetimi import ImageProcessor, EFFECT_PRESETS, EFFECT_ORDER
+import shutil
+import os
+import traceback
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from tetimi import ImageProcessor, EFFECT_ORDER
 
 class ASCIIAnimationProcessor:
     def __init__(self, image_input: Union[str, bytes, Image.Image, BytesIO], output_dir: str = "animations"):
-        """Initialize ASCII animation processor 
+        """Initialize ASCII animation processor
         
         Args:
-            image_input: Input image in various formats (path, bytes, PIL Image, or BytesIO)
+            image_input: Input image in various formats
             output_dir: Directory for output files
         """
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger('ASCIIAnimationProcessor')
         
-        # Handle different input types
+        self.output_dir = Path(output_dir)
+        self.frames_dir = self.output_dir / "frames"
+        
+        if self.frames_dir.exists():
+            shutil.rmtree(self.frames_dir)
+            
+        self.output_dir.mkdir(exist_ok=True)
+        self.frames_dir.mkdir(exist_ok=True)
+        
         if isinstance(image_input, str):
             self.input_path = Path(image_input)
             if not self.input_path.exists():
                 raise ValueError(f"Input image not found: {image_input}")
-            self.base_processor = ImageProcessor(Image.open(self.input_path))
+            self.base_image = Image.open(self.input_path)
+            self.temp_input = False
         else:
-            # For non-path inputs, save to temporary file
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                if isinstance(image_input, bytes):
-                    tmp.write(image_input)
-                    self.base_processor = ImageProcessor(Image.open(BytesIO(image_input)))
-                elif isinstance(image_input, Image.Image):
-                    image_input.save(tmp.name, format='PNG')
-                    self.base_processor = ImageProcessor(image_input)
-                elif isinstance(image_input, BytesIO):
-                    tmp.write(image_input.getvalue())
-                    self.base_processor = ImageProcessor(Image.open(image_input))
-                self.input_path = Path(tmp.name)
-                self.temp_input = True
-
-        self.output_dir = Path(output_dir)
-        self.frames_dir = self.output_dir / "ascii_frames"
+            tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+            self.input_path = Path(tmp.name)
+            self.temp_input = True
+            
+            if isinstance(image_input, bytes):
+                self.base_image = Image.open(BytesIO(image_input))
+            elif isinstance(image_input, Image.Image):
+                self.base_image = image_input
+            elif isinstance(image_input, BytesIO):
+                self.base_image = Image.open(image_input)
+            else:
+                raise ValueError("Unsupported image input type")
+            
+            self.base_image.save(tmp.name, format='PNG')
         
-        # Create directories
-        self.output_dir.mkdir(exist_ok=True)
-        self.frames_dir.mkdir(exist_ok=True)
+        self.base_processor = ImageProcessor(self.base_image)
+        self.executor = ThreadPoolExecutor(max_workers=4)
 
-    def generate_ascii_frames(self, params: dict, num_frames: int = 60,
-                              cols: int = 80, scale: float = 0.43) -> List[List[str]]:
-        """Generate frames with animated parameter transitions"""
-        ascii_frames = []
+    def create_frame_image(self, ascii_frame: List[str], font_size: int = 14) -> Image.Image:
+        """Convert ASCII frame to image
         
+        Args:
+            ascii_frame: List of ASCII art lines
+            font_size: Font size for rendering
+            
+        Returns:
+            PIL Image of rendered ASCII art
+        """
+        try:
+            font = ImageFont.truetype("Courier", font_size)
+        except:
+            font = ImageFont.load_default()
+        
+        char_width = font_size * 0.6
+        char_height = font_size * 1.2
+        max_line_length = max(len(line) for line in ascii_frame)
+        width = int(max_line_length * char_width)
+        height = int(len(ascii_frame) * char_height)
+        
+        image = Image.new('RGB', (width, height), 'white')
+        draw = ImageDraw.Draw(image)
+        
+        y = 0
+        for line in ascii_frame:
+            draw.text((0, y), line, font=font, fill='black')
+            y += char_height
+        
+        return image
+
+    async def generate_frame(self, frame_num: int, total_frames: int, 
+                           effects: Dict[str, Any], cols: int, scale: float) -> Path:
+        """Generate a single frame asynchronously"""
+        progress = frame_num / (total_frames - 1)
+        
+        # Calculate frame effects
+        frame_effects = {}
+        for effect, value in effects.items():
+            if isinstance(value, tuple) and len(value) == 2:
+                start, end = value
+                if isinstance(start, (int, float)) and isinstance(end, (int, float)):
+                    frame_effects[effect] = start + (end - start) * progress
+            else:
+                frame_effects[effect] = value
+        
+        # Process image with effects
+        processed_image = self.base_image.copy()
+        for effect in EFFECT_ORDER:
+            if effect in frame_effects:
+                processor = ImageProcessor(processed_image)
+                processed_image = processor.apply_effect(effect, {effect: frame_effects[effect]})
+        
+        # Convert to ASCII
+        processor = ImageProcessor(processed_image)
+        ascii_frame = await asyncio.get_event_loop().run_in_executor(
+            self.executor,
+            processor.convertImageToAscii,
+            cols,
+            scale
+        )
+        
+        # Create and save frame
+        frame_image = await asyncio.get_event_loop().run_in_executor(
+            self.executor,
+            self.create_frame_image,
+            ascii_frame
+        )
+        
+        frame_path = self.frames_dir / f"frame_{frame_num:04d}.png"
+        await asyncio.get_event_loop().run_in_executor(
+            self.executor,
+            frame_image.save,
+            frame_path
+        )
+        
+        self.logger.info(f"Generated frame {frame_num + 1}/{total_frames}")
+        return frame_path
+
+    async def generate_frames(self, params: Optional[Dict[str, Any]] = None,
+                            num_frames: int = 30,
+                            cols: int = 80) -> List[Path]:
+        """Generate ASCII animation frames asynchronously
+        
+        Args:
+            params: Animation parameters
+            num_frames: Number of frames to generate
+            cols: Number of columns for ASCII art
+            
+        Returns:
+            List of frame file paths
+        """
+        params = params or {}
+        scale = params.get('scale', 0.43)
+        
+        effects = params.get('effects', {
+            'consciousness': (0.3, 0.8),
+            'glitch': (0, 5),
+            'chroma': (5, 15)
+        })
+        
+        tasks = []
         for i in range(num_frames):
-            progress = i / (num_frames - 1)
-            frame_params = {}
-            
-            # Interpolate parameters
-            for effect, value in params.items():
-                if isinstance(value, tuple) and len(value) == 2:
-                    start_val, end_val = value
-                    frame_params[effect] = start_val + (end_val - start_val) * progress
-                else:
-                    frame_params[effect] = value
-            
-            # Initialize a fresh copy of the base image for this frame
-            result = self.base_processor.base_image.copy()  # Assuming PIL Image
-            
-            # Apply effects using the ImageProcessor
-            for effect in EFFECT_ORDER:
-                if effect in frame_params:
-                    print(f"Applying effect: {effect} with value: {frame_params[effect]}")
-                    result = self.base_processor.apply_effect(effect, {effect: frame_params[effect]})
-                    print(f"Effect applied: {effect}")
-            
-            # Convert to ASCII
-            ascii_frame = self.base_processor.convertImageToAscii(result, scale=scale, cols=cols)
-            ascii_frames.append(ascii_frame)
+            task = self.generate_frame(i, num_frames, effects, cols, scale)
+            tasks.append(task)
         
-        return ascii_frames  # Only return ASCII frames to reduce memory usage
-
-    def save_frames(self, frames: List[List[str]], output_file: str = "ascii_animation.txt") -> Path:
-        """Save ASCII frames to file with frame markers"""
-        output_path = self.output_dir / output_file
+        frame_paths = await asyncio.gather(*tasks)
         
-        # Ensure the output directory exists
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Save complete ASCII animation to text file
+        frames_text = []
+        for i, frame_path in enumerate(frame_paths):
+            processor = ImageProcessor(Image.open(frame_path))
+            ascii_frame = processor.convertImageToAscii(cols=cols, scale=scale)
+            frames_text.append(f"=== Frame {i:04d} ===\n" + '\n'.join(ascii_frame) + '\n\n')
         
-        with open(output_path, 'w') as f:
-            for i, frame in enumerate(frames):
-                f.write(f"=== Frame {i} ===\n")
-                f.write('\n'.join(frame))
-                f.write('\n\n')
-                
-        return output_path
+        text_path = self.output_dir / "ascii_animation.txt"
+        with open(text_path, 'w', encoding='utf-8') as f:
+            f.writelines(frames_text)
+        
+        return frame_paths
 
     def cleanup(self):
-        """Remove temporary files"""
-        if hasattr(self, 'temp_input') and getattr(self, 'temp_input', False):
-            try:
+        """Clean up temporary files"""
+        self.executor.shutdown(wait=False)
+        try:
+            if hasattr(self, 'temp_input') and self.temp_input:
                 os.unlink(self.input_path)
-            except Exception as e:
-                self.logger.error(f"Error cleaning up temp file: {e}")
-                
+        except Exception as e:
+            self.logger.error(f"Cleanup error: {e}")
+            
         if self.frames_dir.exists():
-            shutil.rmtree(self.frames_dir)
+            try:
+                shutil.rmtree(self.frames_dir)
+            except Exception as e:
+                self.logger.error(f"Failed to remove frames directory: {e}")
 
     def __del__(self):
         """Cleanup on object destruction"""

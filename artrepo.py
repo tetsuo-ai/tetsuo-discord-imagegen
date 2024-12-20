@@ -424,3 +424,11 @@ class ArtRepository:
             'total_views': artwork_stats[1] or 0,
             'featured_count': artwork_stats[2] or 0
         }
+        
+        
+def __enter__(self):
+    return self
+
+def __exit__(self, exc_type, exc_val, exc_tb):
+    if hasattr(self, 'conn'):
+        self.conn.close()
