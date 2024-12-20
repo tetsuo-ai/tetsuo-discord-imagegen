@@ -13,7 +13,8 @@ from pathlib import Path
 import random
 import colorsys
 import math
-from typing import Optional, Tuple, Dict, Any, List, Union
+from dataclasses import dataclass
+from typing import Dict, Any, Optional, Tuple, List, Union
 from io import BytesIO
 from dotenv import load_dotenv
 import os
@@ -25,113 +26,178 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 IMAGES_FOLDER = 'images'
 INPUT_IMAGE = 'input.png'
 
+@dataclass
+class Keyframe:
+    """Represents a keyframe with time and value"""
+    time: float  # 0.0 to 1.0
+    value: Any
+    easing: str = 'linear'  # Options: 'linear', 'ease_in', 'ease_out', 'ease_in_out'
+    
+    def __post_init__(self):
+        if not 0 <= self.time <= 1:
+            raise ValueError("Keyframe time must be between 0 and 1")
+
+class ParameterSchedule:
+    """Represents a parameter that can have multiple keyframes"""
+    def __init__(self, keyframes: Union[List[Keyframe], Any]):
+        """Initialize with either keyframes or a static value"""
+        if isinstance(keyframes, list) and all(isinstance(k, Keyframe) for k in keyframes):
+            self.keyframes = sorted(keyframes, key=lambda k: k.time)
+        else:
+            # If not given keyframes, treat as static value
+            self.keyframes = [Keyframe(0.0, keyframes)]
+            
+    def _ease(self, progress: float, easing: str) -> float:
+        """Apply easing function to progress"""
+        if easing == 'linear':
+            return progress
+        elif easing == 'ease_in':
+            return progress * progress
+        elif easing == 'ease_out':
+            return 1 - (1 - progress) * (1 - progress)
+        elif easing == 'ease_in_out':
+            return 0.5 * (math.sin((progress - 0.5) * math.pi) + 1)
+        return progress
+
+    def _interpolate_values(self, start_val: Any, end_val: Any, progress: float) -> Any:
+        """Interpolate between two values"""
+        if isinstance(start_val, (int, float)) and isinstance(end_val, (int, float)):
+            return start_val + (end_val - start_val) * progress
+            
+        if isinstance(start_val, tuple) and isinstance(end_val, tuple):
+            if len(start_val) != len(end_val):
+                raise ValueError("Tuple values must have same length")
+            return tuple(
+                start + (end - start) * progress
+                for start, end in zip(start_val, end_val)
+            )
+            
+        return start_val  # Default to start value if types don't match
+
+    def get_value(self, time: float) -> Any:
+        """Get interpolated value at given time"""
+        if time <= self.keyframes[0].time:
+            return self.keyframes[0].value
+        if time >= self.keyframes[-1].time:
+            return self.keyframes[-1].value
+            
+        # Find surrounding keyframes
+        idx = bisect_right([k.time for k in self.keyframes], time)
+        k1, k2 = self.keyframes[idx-1], self.keyframes[idx]
+        
+        # Calculate progress between keyframes
+        segment_progress = (time - k1.time) / (k2.time - k1.time)
+        eased_progress = self._ease(segment_progress, k1.easing)
+        
+        return self._interpolate_values(k1.value, k2.value, eased_progress)
+
+class EffectParameters:
+    """Handler for effect parameters supporting keyframe schedules"""
+    
+    def __init__(self, params: Dict[str, Any]):
+        self.params = {}
+        self._parse_params(params)
+    
+    def _parse_params(self, params: Dict[str, Any]):
+        """Parse input parameters into ParameterSchedule objects"""
+        for key, value in params.items():
+            if isinstance(value, list) and all(isinstance(v, Keyframe) for v in value):
+                # Already a list of keyframes
+                self.params[key] = ParameterSchedule(value)
+            elif isinstance(value, (list, tuple)) and len(value) == 2:
+                # Simple start/end range - convert to keyframes
+                if all(isinstance(v, (int, float)) for v in value):
+                    keyframes = [
+                        Keyframe(0.0, value[0]),
+                        Keyframe(1.0, value[1])
+                    ]
+                    self.params[key] = ParameterSchedule(keyframes)
+                else:
+                    # Treat as regular value (e.g., color tuple)
+                    self.params[key] = ParameterSchedule(value)
+            else:
+                # Static value
+                self.params[key] = ParameterSchedule(value)
+    
+    def get_params_at_time(self, time: float) -> Dict[str, Any]:
+        """Get all parameter values at given time"""
+        return {
+            key: schedule.get_value(time)
+            for key, schedule in self.params.items()
+        }
+
 # Effect order and presets
-EFFECT_ORDER = ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse', 'consciousness']
-EFFECT_PRESETS = {
+EFFECT_ORDER = ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse', 'consciousness', 'channel_pass']
+
+# Example of a complex animation preset using keyframes
+
+ANIMATION_PRESETS = {
     'cyberpunk': {
-        'rgb': (20, 235, 215),
-        'rgbalpha': 75,
-        'color': (20, 235, 215),
-        'coloralpha': 50,
-        'chroma': 5,
-        'glitch': 3,
-        'scan': 80,
-        'noise': 0.03
+        'params': {
+            'glitch': (3, 8),  # Start and end values
+            'chroma': (8, 15),
+            'scan': (50, 150),
+            'consciousness': (0.3, 0.7)
+        },
+        'frames': 30,
+        'fps': 24,
+        'description': 'Cyberpunk-style glitch effect with scanning'
     },
     'vaporwave': {
-        'color': (235, 100, 235),
-        'coloralpha': 85,
-        'chroma': 8,
-        'scan': 100,
-        'noise': 0.02,
-        'rgbalpha': 65
+        'params': {
+            'chroma': (10, 20),
+            'scan': (100, 200),
+            'rgb': ((255, 100, 255), (100, 255, 255)),
+            'rgbalpha': (150, 200)
+        },
+        'frames': 30,
+        'fps': 24,
+        'description': 'Vaporwave aesthetic with color shifts'
     },
     'glitch_art': {
-        'color': (235, 45, 75),
-        'coloralpha': 90,
-        'glitch': 12,
-        'chroma': 15,
-        'scan': 120,
-        'noise': 0.08,
-        'rgbalpha': 60
-    },
-    'retro': {
-        'rgb': (65, 215, 95),
-        'rgbalpha': 50,
-        'color': (65, 215, 95),
-        'coloralpha': 50,
-        'scan': 90,
-        'noise': 0.03
+        'params': {
+            'glitch': (5, 15),
+            'chroma': (12, 25),
+            'noise': (0.1, 0.3)
+        },
+        'frames': 30,
+        'fps': 24,
+        'description': 'Heavy glitch effects with chromatic aberration'
     },
     'matrix': {
-        'color': (25, 225, 95),
-        'coloralpha': 95,
-        'scan': 70,
-        'glitch': 2,
-        'noise': 0.02,
-        'chroma': 3,
-        'rgbalpha': 45
-    },
-    'synthwave': {
-        'color': (225, 45, 235),
-        'coloralpha': 90,
-        'chroma': 7,
-        'scan': 150,
-        'noise': 0.02,
-        'rgbalpha': 40
-    },
-    'akira': {
-        'color': (235, 25, 65),
-        'coloralpha': 95,
-        'chroma': 8,
-        'glitch': 6,
-        'scan': 180,
-        'noise': 0.03,
-        'rgbalpha': 35
-    },
-    'tetsuo': {
-        'color': (235, 45, 225),
-        'coloralpha': 100,
-        'chroma': 10,
-        'glitch': 6,
-        'scan': 160,
-        'noise': 0.05,
-        'pulse': 0.15,
-        'rgbalpha': 30
-    },
-    'neo_tokyo': {
-        'rgb': (235, 35, 85),
-        'rgbalpha': 25,
-        'color': (235, 35, 85),
-        'coloralpha': 85,
-        'chroma': 12,
-        'glitch': 8,
-        'scan': 140,
-        'noise': 0.04,
-        'pulse': 0.1
+        'params': {
+            'scan': (50, 150),
+            'consciousness': (0.4, 0.8),
+            'rgb': ((0, 255, 0), (50, 255, 50)),
+            'rgbalpha': (150, 200)
+        },
+        'frames': 30,
+        'fps': 24,
+        'description': 'Matrix-inspired digital rain effect'
     },
     'psychic': {
-        'color': (185, 25, 235),
-        'coloralpha': 95,
-        'chroma': 15,
-        'glitch': 5,
-        'scan': 130,
-        'noise': 0.03,
-        'energy': 0.2,
-        'rgbalpha': 85
+        'params': {
+            'consciousness': (0.3, 0.9),
+            'energy': (0.2, 0.7),
+            'pulse': (0.1, 0.6)
+        },
+        'frames': 30,
+        'fps': 24,
+        'description': 'Psychic energy visualization'
     },
-    'tetsuo_rage': {
-        'color': (225, 24, 42),
-        'coloralpha': 120,
-        'chroma': 20,
-        'glitch': 25,
-        'scan': 50,
-        'noise': 0.15,
-        'energy': 0.2,
-        'pulse': 0.2,
-        'rgbalpha': 90
+    'akira': {
+        'params': {
+            'consciousness': (0.5, 0.9),
+            'energy': (0.3, 0.8),
+            'pulse': (0.2, 0.7),
+            'glitch': (2, 6)
+        },
+        'frames': 30,
+        'fps': 24,
+        'description': 'Akira-inspired psychic power effect'
     }
 }
+
 
 class ImageAnalyzer:
     
@@ -219,14 +285,6 @@ def offset_channel(image: Image.Image, offset_x: int, offset_y: int) -> Image.Im
 
 class ImageProcessor:
     def __init__(self, image_input: Union[str, bytes, Image.Image, BytesIO], points: bool = False):
-        """
-        Initialize image processor with standardized input handling and points effect option
-        
-        Args:
-            image_input: Input image in various formats (path, bytes, PIL Image, or BytesIO)
-            points: Whether to apply points effect during initialization
-        """
-        # First handle the various input types
         if isinstance(image_input, str):
             self.base_image = Image.open(image_input)
         elif isinstance(image_input, bytes):
@@ -237,581 +295,187 @@ class ImageProcessor:
             self.base_image = Image.open(image_input)
         else:
             raise ValueError("Unsupported image input type")
-            
-        # Convert to RGBA for consistency
-        self.base_image = self.base_image.convert('RGBA')
-        
-        # Apply points effect if requested
-        if points:
-            self.base_image = self.apply_points_effect()
-                
-        # Initialize analysis components
-        self.analyzer = ImageAnalyzer()
-        self.analysis = self.analyzer.analyze_image(self.base_image)
-        self.adaptive_params = {}
 
-    def apply_points_effect(self, colors: Optional[List[str]] = None, 
-                          dot_size: int = 6, 
-                          registration_offset: int = 8) -> Image.Image:
-        """Apply points effect to image"""
-        if colors is None:
-            colors = ['#E62020', '#20B020', '#2020E6', '#D4D420']
+    def apply_glitch(self, intensity: float) -> Image.Image:
+        """Apply glitch effect with given intensity"""
+        img = self.base_image.copy()
+        img = img.convert('RGB')
+        arr = np.array(img)
         
-        image = self.base_image.convert('L')
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(2)
+        # Number of glitch lines based on intensity
+        num_lines = int(intensity * 5)
+        height = arr.shape[0]
         
-        result = Image.new('RGBA', image.size, (255, 255, 255, 255))
+        for _ in range(num_lines):
+            # Random line position and offset
+            y = random.randint(0, height-1)
+            offset = random.randint(-10, 10)
+            
+            # Shift line horizontally
+            if 0 <= y < height:
+                arr[y, :] = np.roll(arr[y, :], offset, axis=0)
         
-        for i, color in enumerate(colors):
-            r, g, b = tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
-            halftone = Image.new('RGBA', image.size, (0, 0, 0, 0))
-            draw = ImageDraw.Draw(halftone)
-            
-            density_factor = 0.2 if color.startswith('#D4') else 0.9 if color.startswith('#E6') or color.startswith('#20B') else 0.7
-            
-            for y in range(0, image.size[1], dot_size):
-                for x in range(0, image.size[0], dot_size):
-                    box = (x, y, min(x + dot_size, image.size[0]), 
-                          min(y + dot_size, image.size[1]))
-                    region = image.crop(box)
-                    average = ImageStat.Stat(region).mean[0]
-                    
-                    brightness_factor = ((255 - average) / 255.0) ** 0.8
-                    adjusted_brightness = brightness_factor * density_factor
-                    
-                    dot_radius = int(adjusted_brightness * dot_size * 0.5)
-                    
-                    if dot_radius > 0:
-                        offset_x = random.randint(-1, 1) * 0.5
-                        offset_y = random.randint(-1, 1) * 0.5
-                        center = (x + dot_size//2 + offset_x, 
-                                y + dot_size//2 + offset_y)
-                        
-                        opacity = int(255 * min(adjusted_brightness * 0.9, 1.0))
-                        draw.ellipse([center[0] - dot_radius, 
-                                    center[1] - dot_radius,
-                                    center[0] + dot_radius, 
-                                    center[1] + dot_radius], 
-                                    fill=(r, g, b, opacity))
-            
-            offset_x = int((i - len(colors)/2) * registration_offset * 0.8)
-            offset_y = int((i - len(colors)/2) * registration_offset * 0.8)
-            halftone = ImageChops.offset(halftone, offset_x, offset_y)
-            
-            result = Image.alpha_composite(result, halftone)
-        
-        return result
+        return Image.fromarray(arr)
 
-    def merge_params(self, user_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Merge user parameters with adaptive parameters"""
-        preset_name = user_params.get('preset')
-        preset_params = EFFECT_PRESETS.get(preset_name, {})
-        
-        self.adaptive_params = self.analyzer.get_adaptive_params(
-            self.analysis,
-            user_params,
-            preset_params
-        )
-        
-        merged = self.adaptive_params.copy()
-        
-        if preset_params:
-            merged.update(preset_params)
-        
-        merged.update(user_params)
-        return merged
+    def apply_chromatic_aberration(self, offset: float) -> Image.Image:
+        """Apply RGB channel offset"""
+        img = self.base_image.copy()
+        img = img.convert('RGB')
+        r, g, b = img.split()
 
+        # Create offset versions of channels
+        r = ImageOps.expand(r, border=(int(offset), 0, 0, 0), fill=0)
+        b = ImageOps.expand(b, border=(0, 0, int(offset), 0), fill=0)
+
+        # Crop to original size
+        width, height = img.size
+        r = r.crop((0, 0, width, height))
+        b = b.crop((0, 0, width, height))
+
+        # Merge channels
+        return Image.merge('RGB', (r, g, b))
+
+    def apply_scan_lines(self, gap: float) -> Image.Image:
+        """Apply scan line effect"""
+        img = self.base_image.copy()
+        img = img.convert('RGB')
+        width, height = img.size
+        draw = ImageDraw.Draw(img)
+
+        # Draw horizontal lines
+        for y in range(0, height, max(1, int(gap))):
+            draw.line([(0, y), (width, y)], fill=(0, 0, 0), width=1)
+
+        return img
+
+    def apply_noise(self, intensity: float) -> Image.Image:
+        """Add noise to image"""
+        img = self.base_image.copy()
+        img = img.convert('RGB')
+        arr = np.array(img)
+        
+        # Generate noise
+        noise = np.random.normal(0, intensity * 255, arr.shape)
+        noisy = np.clip(arr + noise, 0, 255).astype(np.uint8)
+        
+        return Image.fromarray(noisy)
+
+    def apply_energy_effect(self, intensity: float) -> Image.Image:
+        """Apply energy distortion effect"""
+        img = self.base_image.copy()
+        img = img.convert('RGB')
+        arr = np.array(img)
+        
+        # Create energy distortion
+        x = np.arange(arr.shape[1])
+        y = np.arange(arr.shape[0])
+        X, Y = np.meshgrid(x, y)
+        
+        distortion = np.sin(X * 0.1 + Y * 0.1) * intensity * 30
+        
+        # Apply distortion to each channel
+        for c in range(3):
+            arr[:,:,c] = np.clip(arr[:,:,c] + distortion, 0, 255)
+        
+        return Image.fromarray(arr.astype(np.uint8))
+
+    def apply_pulse_effect(self, intensity: float) -> Image.Image:
+        """Apply pulsing effect"""
+        img = self.base_image.copy()
+        img = img.convert('RGB')
+        
+        # Enhance brightness based on intensity
+        enhancer = ImageEnhance.Brightness(img)
+        pulse_factor = 1.0 + intensity
+        return enhancer.enhance(pulse_factor)
+
+    def apply_consciousness(self, intensity: float) -> Image.Image:
+        """Apply consciousness effect (combination of effects)"""
+        img = self.base_image.copy()
+        
+        # Apply multiple effects in sequence
+        img = self.apply_energy_effect(intensity * 0.5)
+        img = self.apply_pulse_effect(intensity * 0.3)
+        if intensity > 0.5:
+            img = self.apply_chromatic_aberration(intensity * 5)
+        
+        return img
 
     def add_color_overlay(self, color: Tuple[int, int, int, int]) -> Image.Image:
-        if len(color) != 4:
-            raise ValueError("Color tuple must have 4 values: (r, g, b, alpha).")
+        """Add color overlay with alpha"""
+        img = self.base_image.copy()
+        img = img.convert('RGBA')
+        
+        # Create color overlay
+        overlay = Image.new('RGBA', img.size, color)
+        
+        # Blend images
+        return Image.alpha_composite(img, overlay)
 
-        r, g, b, alpha = color
-        
-        # Ensure alpha is within the range of 0 to 255
-        alpha = max(0, min(255, alpha))
-
-        # Calculate blend_alpha based on the original alpha
-        blend_alpha = (alpha / 255.0) * 0.2  # Apply blending ratio with alpha
-
-        # Create an overlay with modified alpha for the transparency effect
-        overlay = Image.new('RGBA', self.base_image.size, (r, g, b, int(alpha * 0.3)))
-
-        # Blend the base image with the overlay
-        result = Image.blend(self.base_image.convert('RGBA'), overlay, blend_alpha)
-
-        return result
-
-
-    def colorize_non_white(self, r: int, g: int, b: int, alpha: int = 255) -> Image.Image:
-        """Enhanced colorization with more nuanced color blending"""
-        img_array = np.array(self.base_image.convert('RGBA'))
-        glow = img_array.copy()
-        glow[:, :] = [r, g, b, alpha]
-        
-        luminance = np.sum(img_array[:, :, :3] * [0.299, 0.587, 0.114], axis=2)
-        non_white_mask = luminance < 240
-        blend_factor = ((255 - luminance) / 255.0)[:, :, np.newaxis]
-        blend_factor = np.clip(blend_factor * 1.5, 0, 1)
-        
-        result = img_array.copy()
-        result[non_white_mask] = (
-            (1 - blend_factor[non_white_mask]) * img_array[non_white_mask] +
-            blend_factor[non_white_mask] * glow[non_white_mask]
-        ).astype(np.uint8)
-        
-        return Image.fromarray(result)
-
-    def apply_glitch_effect(self, intensity: float = 10.0) -> Image.Image:
-        """Enhanced glitch effect with support for higher intensities"""
-        if not 0.0 <= float(intensity) <= 50.0:
-            raise ValueError("Glitch intensity must be between 1 and 50")
-            
-        img_array = np.array(self.base_image)
-        result = img_array.copy()
-        
-        iterations = int(float(intensity) * 1.5)
-        
-        for _ in range(iterations):
-            offset = np.random.randint(-20, 20)
-            if offset == 0:
-                continue
-                
-            if offset > 0:
-                result[offset:, :] = img_array[:-offset, :]
-                result[:offset, :] = img_array[-offset:, :]
-            else:
-                offset = abs(offset)
-                result[:-offset, :] = img_array[offset:, :]
-                result[-offset:, :] = img_array[:offset, :]
-            
-            channel = np.random.randint(0, 3)
-            shift = np.random.randint(-10, 11)
-            if shift != 0:
-                temp = np.roll(result[:, :, channel], shift, axis=1)
-                img_array[:, :, channel] = temp
-        
-        return Image.fromarray(result)
-    def add_chromatic_aberration(self, offset):
-        """
-        Args:
-            offset (float or tuple): Chromatic aberration offset
-        """
-        # If tuple, use numpy's linspace to generate range
-        if isinstance(offset, tuple):
-            start, end = float(offset[0]), float(offset[1])
-            offset = np.linspace(start, end, num=10)
-        
-        # Convert to float and validate
-        offset = float(offset)
-        if not 0.0 <= offset <= 40.0:
-            raise ValueError("Chromatic aberration offset must be between 1 and 40")
-            
-        # Split into channels
-        r, g, b, a = self.base_image.split()
-        
-        # Calculate exponential offsets for more natural distortion
-        r_offset = int(-offset * (1.0 + math.log(offset/10 + 1, 2)) * 0.8)
-        b_offset = int(offset * (1.0 + math.log(offset/10 + 1, 2)) * 0.8)
-        g_offset = int(offset * math.log(offset/20 + 1, 2) * 0.3)
-        
-        # Apply graduated blur based on offset distance
-        blur_amount = 0.3 + (offset / 40) * 0.7
-        
-        # Process each channel with variable blur
-        r = offset_channel(r, r_offset, 0)
-        r = r.filter(ImageFilter.GaussianBlur(radius=blur_amount))
-        
-        b = offset_channel(b, b_offset, 0)
-        b = b.filter(ImageFilter.GaussianBlur(radius=blur_amount))
-        
-        g = offset_channel(g, g_offset, 0)
-        g = g.filter(ImageFilter.GaussianBlur(radius=blur_amount * 0.5))
-        
-        result = Image.merge('RGBA', (r, g, b, a))
-        
-        enhancer = ImageEnhance.Contrast(result)
-        result = enhancer.enhance(1.1)
-        
-        return result
-    
-    def add_scan_lines(self, gap: float = 2.0, alpha: float = 128.0) -> Image.Image:
-        """Enhanced scan lines with variable intensity and subtle glow effect"""
-        width, height = self.base_image.size
-        scan_lines = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(scan_lines)
-        
-        # Convert gap to int for range stepping
-        int_gap = max(1, int(gap))
-        
-        for y in range(0, height, int_gap):
-            intensity = int(float(alpha) * (0.7 + 0.3 * random.random()))
-            draw.line([(0, y), (width, y)], fill=(0, 0, 0, intensity))
-            
-            if y > 0:
-                draw.line([(0, y-1), (width, y-1)], 
-                         fill=(0, 0, 0, intensity//2))
-        
-        scan_lines = scan_lines.filter(ImageFilter.GaussianBlur(0.5))
-        return Image.alpha_composite(self.base_image.convert('RGBA'), scan_lines)
-
-    def add_noise(self, intensity: float = 0.1) -> Image.Image:
-        """Enhanced noise effect with spatial coherence and smoother transitions
-        
-        Args:
-            intensity: Noise intensity between 0 and 1
-            
-        Returns:
-            PIL.Image: Image with enhanced noise effect
-        """
-        if not isinstance(intensity, (int, float)) or not 0 <= intensity <= 1:
-            raise ValueError("Noise intensity must be between 0 and 1")
-            
-        img_array = np.array(self.base_image)
-        height, width = img_array.shape[:2]
-        
-        # Create base noise at lower resolution for spatial coherence
-        scale_factor = 4
-        small_height = height // scale_factor
-        small_width = width // scale_factor
-        
-        # Generate multiple noise layers with different frequencies
-        base_noise = np.random.normal(0, 1, (small_height, small_width, img_array.shape[2]))
-        detail_noise = np.random.normal(0, 0.5, (small_height, small_width, img_array.shape[2]))
-        fine_noise = np.random.normal(0, 0.25, (height, width, img_array.shape[2]))
-        
-        # Smooth the base noise layers
-        base_noise = gaussian_filter(base_noise, sigma=1.5)
-        detail_noise = gaussian_filter(detail_noise, sigma=0.8)
-        
-        # Resize smoothed noise layers to the original image size (avoiding zoom)
-        base_noise = np.resize(base_noise, (height, width, img_array.shape[2]))
-        detail_noise = np.resize(detail_noise, (height, width, img_array.shape[2]))
-        
-        # Combine noise layers with different weights
-        combined_noise = (
-            base_noise * 0.8 +
-            detail_noise * 0.5 +
-            fine_noise * 0.2
-        )
-        
-        # Normalize noise to desired intensity range
-        noise_range = np.max(np.abs(combined_noise))
-        if noise_range > 0:
-            combined_noise = combined_noise / noise_range * (intensity * 255)
-        
-        # Create noise mask with smooth transitions
-        mask = np.random.random(img_array.shape)
-        mask = gaussian_filter(mask, sigma=1.0)
-        mask = mask > 0.3  # Adjust threshold for noise density
-        
-        # Apply noise selectively based on image brightness
-        image_brightness = np.mean(img_array, axis=2, keepdims=True) / 255.0
-        brightness_factor = np.clip(1.0 - image_brightness * 0.5, 0.3, 1.0)
-        
-        # Combine everything
-        noisy_image = img_array + (combined_noise * mask * brightness_factor)
-        noisy_image = np.clip(noisy_image, 0, 255)
-        
-        return Image.fromarray(noisy_image.astype('uint8'))
-
-
-    def apply_energy_effect(self, intensity: float = 0.8) -> Image.Image:
-        """Optimized energy effect for animation support
-        
-        Args:
-            intensity (float): Effect intensity (0-2)
-                
-        Returns:
-            PIL.Image: Processed image with energy effect
-        """
-        if not 0 <= intensity <= 2:
-            raise ValueError("Energy intensity must be between 0 and 2")
-                
-        # Convert to RGBA
-        base = self.base_image.convert('RGBA')
-        width, height = base.size
-        
-        # Create energy layer
-        energy = Image.new('RGBA', base.size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(energy)
-        
-        # Simplified line generation for animation
-        num_lines = int(min(width, height) * 0.15 * intensity)
-        
-        # Predefined color range for performance
-        hues = np.linspace(0.5, 0.7, num_lines)  # Blue to purple range
-        saturations = np.full(num_lines, 0.9)
-        values = np.full(num_lines, 0.9)
-        
-        # Generate all colors at once
-        colors = [
-            tuple(int(x * 255) for x in colorsys.hsv_to_rgb(h, s, v))
-            for h, s, v in zip(hues, saturations, values)
-        ]
-        
-        # Generate lines more efficiently
-        for i in range(num_lines):
-            # Random positions
-            x1 = random.randint(0, width)
-            y1 = random.randint(0, height)
-            
-            # Calculate line properties
-            angle = random.uniform(0, 2 * math.pi)
-            length = random.randint(int(30 * intensity), int(100 * intensity))
-            
-            # Calculate end point
-            x2 = x1 + int(length * math.cos(angle))
-            y2 = y1 + int(length * math.sin(angle))
-            
-            # Get color and alpha
-            rgb = colors[i]
-            alpha = int(180 * intensity)
-            color = rgb + (alpha,)
-            
-            # Draw main line
-            line_width = max(1, int(3 * intensity))
-            draw.line([(x1, y1), (x2, y2)], fill=color, width=line_width)
-            
-            # Simplified glow (just one layer)
-            glow_color = rgb + (int(alpha * 0.3),)
-            draw.line([(x1, y1), (x2, y2)], 
-                     fill=glow_color, 
-                     width=line_width + 4)
-        
-        # Optimized blur
-        energy = energy.filter(ImageFilter.GaussianBlur(radius=1))
-        
-        # Blend with base image
-        blend_factor = min(0.7, intensity * 0.4)
-        result = Image.blend(base, Image.alpha_composite(base, energy), blend_factor)
-        
-        return result
-
-    def apply_pulse_effect(self, intensity: float = 0.7) -> Image.Image:
-        """Enhanced pulse effect with content-aware placement and dynamic sizing
-        
-        Args:
-            intensity (float): Effect intensity (0-2)
-            
-        Returns:
-            PIL.Image: Processed image with pulse effect
-        """
-        if not 0 <= intensity <= 2:
-            raise ValueError("Pulse intensity must be between 0 and 2")
-            
-        base = self.base_image.convert('RGBA')
-        width, height = base.size
-        
-        # Create analysis layers
-        edges = base.filter(ImageFilter.FIND_EDGES)
-        edge_data = np.array(edges.convert('L'))
-        
-        brightness_layer = base.convert('L')
-        brightness_data = np.array(brightness_layer)
-        
-        # Create pulse layer
-        pulse = Image.new('RGBA', base.size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(pulse)
-        
-        # Calculate number of pulses based on image size and intensity
-        base_pulses = int(min(width, height) * 0.05)
-        num_pulses = int(base_pulses * intensity)
-        
-        # Track pulse positions
-        pulse_positions = []
-        
-        for _ in range(num_pulses):
-            # Find dark areas with edges
-            candidate_positions = np.where((brightness_data < 128) & (edge_data > 30))
-            
-            if len(candidate_positions[0]) > 0:
-                # Select random position from candidates
-                idx = np.random.randint(len(candidate_positions[0]))
-                y = candidate_positions[0][idx]
-                x = candidate_positions[1][idx]
-            else:
-                # Fallback to random position
-                x = random.randint(0, width)
-                y = random.randint(0, height)
-                
-            # Check spacing from existing pulses
-            if pulse_positions and any(abs(x - px) + abs(y - py) < 40 for px, py in pulse_positions):
-                continue
-            
-            # Calculate pulse properties based on local image data
-            local_brightness = brightness_data[
-                max(0, y-10):min(height, y+10),
-                max(0, x-10):min(width, x+10)
-            ].mean()
-            
-            local_edge = edge_data[
-                max(0, y-10):min(height, y+10),
-                max(0, x-10):min(width, x+10)
-            ].mean()
-            
-            # Dynamic radius based on local properties
-            base_radius = int(20 * (1 - local_brightness/255))
-            variation = random.uniform(0.8, 1.2)
-            radius = int(base_radius * variation * intensity)
-            
-            # Generate pulse with multiple layers
-            num_layers = int(5 + intensity * 5)
-            for layer in range(num_layers):
-                progress = layer / num_layers
-                current_radius = int(radius * (1 - progress))
-                
-                # Calculate alpha based on layer and local properties
-                base_alpha = int(150 * intensity * (1 - local_brightness/255))
-                layer_alpha = int(base_alpha * (1 - progress) * (0.5 + 0.5 * local_edge/255))
-                
-                # Generate colors with slight variation
-                hue = random.uniform(0.55, 0.65)  # Blue range
-                saturation = random.uniform(0.7, 0.9)
-                value = random.uniform(0.8, 1.0)
-                rgb = tuple(int(x * 255) for x in colorsys.hsv_to_rgb(hue, saturation, value))
-                
-                # Draw graduated pulse
-                draw.ellipse(
-                    [x - current_radius, y - current_radius,
-                     x + current_radius, y + current_radius],
-                    fill=rgb + (layer_alpha,)
-                )
-            
-            pulse_positions.append((x, y))
-            if len(pulse_positions) > 5:
-                pulse_positions.pop(0)
-        
-        # Apply subtle blur
-        blur_radius = 2 + intensity
-        pulse = pulse.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-        
-        # Blend with base image
-        blend_factor = min(0.6, intensity * 0.35)
-        result = Image.blend(base, Image.alpha_composite(base, pulse), blend_factor)
-        
-        # Slight contrast enhancement
-        enhancer = ImageEnhance.Contrast(result)
-        result = enhancer.enhance(1.1)
-        
-        return result
-    def apply_effect(self, effect_name: str, params: dict) -> Image.Image:
-        """Apply named effect with parameters"""
-        if effect_name == 'rgb':
-            return self.colorize_non_white(*params['rgb'], params.get('rgbalpha', 255))
-        elif effect_name == 'color':
-            return self.add_color_overlay((*params['color'], params.get('coloralpha', 255)))
-        elif effect_name == 'glitch':
-            return self.apply_glitch_effect(params['glitch'])
-        elif effect_name == 'chroma':
-            return self.add_chromatic_aberration(params['chroma'])
-        elif effect_name == 'scan':
-            return self.add_scan_lines(params['scan'])
-        elif effect_name == 'noise':
-            return self.add_noise(params['noise'])
-        elif effect_name == 'energy':
-            return self.apply_energy_effect(params['energy'])
-        elif effect_name == 'pulse':
-            return self.apply_pulse_effect(params['pulse'])
-        elif effect_name == 'consciousness':
-            return self.apply_consciousness_effect(params['consciousness'])
-        return self.base_image    
-    def convertImageToAscii(self, cols: int = 80, scale: float = 0.43, moreLevels: bool = True) -> List[str]:
+    def convertImageToAscii(self, cols: int = 80, scale: float = 0.43, moreLevels: bool = False) -> List[str]:
         """Convert image to ASCII art"""
-        gscale1 = "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\|()1{}[]?-_+~<>i!lI;:,\"^`'. "
-        gscale2 = '@%#*+=-:. '
+        # Define ASCII characters
+        chars = np.asarray(list(' .,:;irsXA253hMHGS#9B&@')) if moreLevels else np.asarray(list(' .:-=+*#%@'))
         
-        image = self.base_image.convert('L')
-        W, H = image.size
+        # Calculate dimensions
+        img = self.base_image.copy()
+        W, H = img.size
         w = W/cols
         h = w/scale
         rows = int(H/h)
         
+        # Resize image
         if cols > W or rows > H:
-            raise ValueError("Image too small for specified columns")
-
-        aimg = []
-        for j in range(rows):
-            y1 = int(j*h)
-            y2 = int((j+1)*h)
-            if j == rows-1:
-                y2 = H
-                
-            aimg.append("")
-            for i in range(cols):
-                x1 = int(i*w)
-                x2 = int((i+1)*w)
-                if i == cols-1:
-                    x2 = W
-                    
-                img = image.crop((x1, y1, x2, y2))
-                avg = int(np.array(img).mean())
-                
-                if moreLevels:
-                    gsval = gscale1[int((avg*69)/255)]
-                else:
-                    gsval = gscale2[int((avg*9)/255)]
-                
-                aimg[j] += gsval
+            raise ValueError('Image too small for specified columns!')
         
-        return aimg
-    def apply_consciousness_effect(self, intensity: float = 0.5) -> Image.Image:
-        """Apply consciousness-warping effect that creates a dreamlike, fluid distortion
+        img = img.resize((cols, rows), Image.Resampling.LANCZOS)
+        img = img.convert('L')  # Convert to grayscale
         
-        Args:
-            intensity: Effect intensity between 0 and 1
-            
-        Returns:
-            Processed image with consciousness effect
-        """
-        if not 0 <= intensity <= 1:
-            raise ValueError("Consciousness intensity must be between 0 and 1")
-            
-        # Create base displacement maps
-        width, height = self.base_image.size
-        x_displacement = np.zeros((height, width), dtype=np.float32)
-        y_displacement = np.zeros((height, width), dtype=np.float32)
-        
-        # Generate fluid, organic distortion
-        freq = 5 + intensity * 15  # Higher intensity = more frequent waves
-        amplitude = intensity * 20  # Controls distortion strength
-        
-        for y in range(height):
-            for x in range(width):
-                # Create organic, flowing distortion using sine waves
-                wave1 = math.sin(x / freq + y / (freq * 1.5)) * amplitude
-                wave2 = math.cos(y / freq + x / (freq * 1.5)) * amplitude
-                wave3 = math.sin((x + y) / (freq * 2)) * amplitude * 0.5
-                
-                x_displacement[y, x] = wave1 + wave3
-                y_displacement[y, x] = wave2 - wave3
-        
-        # Convert image to numpy array for processing
-        img_array = np.array(self.base_image)
-        
-        # Create output array
-        output = np.zeros_like(img_array)
-        
-        # Apply displacement with bounds checking
-        for y in range(height):
-            for x in range(width):
-                # Calculate displaced coordinates
-                new_x = int(x + x_displacement[y, x])
-                new_y = int(y + y_displacement[y, x])
-                
-                # Ensure coordinates are within bounds
-                new_x = max(0, min(width - 1, new_x))
-                new_y = max(0, min(height - 1, new_y))
-                
-                # Copy pixel from source to output
-                output[y, x] = img_array[new_y, new_x]
-        
-        # Convert back to PIL Image
-        result = Image.fromarray(output)
-        
-        # Add subtle glow effect
-        glow = result.filter(ImageFilter.GaussianBlur(radius=2 * intensity))
-        result = Image.blend(result, glow, 0.3 * intensity)
+        # Map pixels to characters
+        pixels = np.array(img)
+        result = []
+        for row in range(rows):
+            line = ''
+            for col in range(cols):
+                pixel_value = pixels[row, col]
+                # Map pixel value to character index
+                char_idx = (pixel_value * (len(chars) - 1) / 255).astype(int)
+                line += chars[char_idx]
+            result.append(line)
         
         return result
+
+    def apply_effect(self, effect_name: str, params: dict) -> Image.Image:
+        """Apply an effect with parameters"""
+        if effect_name not in params:
+            return self.base_image
+
+        value = params[effect_name]
+        
+        # Handle tuple values for animations
+        if isinstance(value, tuple):
+            # For static images, use the first value
+            if isinstance(value[0], (int, float)):
+                value = value[0]
+            elif isinstance(value[0], tuple):  # For RGB values
+                value = value[0]
+
+        if effect_name == 'glitch':
+            return self.apply_glitch(value)
+        elif effect_name == 'chroma':
+            return self.apply_chromatic_aberration(value)
+        elif effect_name == 'scan':
+            return self.apply_scan_lines(value)
+        elif effect_name == 'noise':
+            return self.apply_noise(value)
+        elif effect_name == 'energy':
+            return self.apply_energy_effect(value)
+        elif effect_name == 'pulse':
+            return self.apply_pulse_effect(value)
+        elif effect_name == 'consciousness':
+            return self.apply_consciousness(value)
+        elif effect_name == 'rgb':
+            if isinstance(value, tuple):
+                return self.add_color_overlay((*value, params.get('rgbalpha', 255)))
+
+        return self.base_image
