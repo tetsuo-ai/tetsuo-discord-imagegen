@@ -28,6 +28,26 @@ IMAGES_FOLDER = "images"
 INPUT_IMAGE = "input.png"
 
 
+def colorize_non_white(processor, color=(255, 0, 0)):  # Red as default color
+    # Open the image
+    img = processor
+    # Convert to RGBA if not already in that mode
+    img = img.convert("RGBA")
+    datas = img.getdata()
+
+    new_data = []
+    for item in datas:
+        # Check if the pixel isn't white (you might want to adjust this threshold)
+        if item[:3] != (255, 255, 255):  # Assuming white is 255, 255, 255
+            new_data.append(color + (item[3],))  # Keep the original alpha
+        else:
+            new_data.append(item)
+
+    # Create new image with modified data
+    img.putdata(new_data)
+    return img
+
+
 @dataclass
 class Keyframe:
     """Represents a keyframe with time and value"""
@@ -357,7 +377,7 @@ class ImageProcessor:
         text_height = text_bbox[3] - text_bbox[1]
         position = (
             (impact_image.width - text_width) // 2,
-            (impact_image.height - text_height) // 2,
+            (impact_image.height - text_height) // 1.15,
         )
         # Draw outline by drawing the text shifted slightly in all directions
         for outline_offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
