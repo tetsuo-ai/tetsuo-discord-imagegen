@@ -19,6 +19,7 @@ from PIL import Image, ImageEnhance
 
 from anims import AnimationProcessor, Keyframe
 from artrepo import ArtRepository
+from ascii_anim import ASCIIAnimationProcessor
 from channelpass import ChannelPassAnimator
 from tetimi import ANIMATION_PRESETS, EFFECT_ORDER, ImageProcessor
 
@@ -40,15 +41,6 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 # Initialize the ArtRepository globally
 art_repo = ArtRepository(db_path="art_repository.db", storage_path="art_storage")
     
-import random
-import re
-from dataclasses import dataclass
-# First make sure these imports are at the top of your bot.py:
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-
-from tetimi import ANIMATION_PRESETS, EFFECT_ORDER
-
 ''' Defined in anims.py
 @dataclass
 class Keyframe:
@@ -440,7 +432,7 @@ async def ascii_art(ctx, *args):
         upscale = False
         
         # Process arguments
-        if 'random' in args:
+        if args.index("random") >= 0:
             images = list(Path(IMAGES_FOLDER).glob('*.*'))
             if not images:
                 await ctx.send(f"Error: No images found in {IMAGES_FOLDER}")
@@ -539,6 +531,12 @@ async def ascii_animate_command(ctx, *args):
             await ctx.send("Error: Image not found!")
             return
 
+        if '--random' in args:
+            images = list(Path(IMAGES_FOLDER).glob('*.*'))
+            if not images:
+                raise ValueError(f"No images found in {IMAGES_FOLDER}")
+            image_path = str(random.choice(images))
+            print("Image selected: ", image_path)
         status_msg = await ctx.send("Generating ASCII animation...")
         progress_msg = await ctx.send("Frame 0/" + str(frames))
         
