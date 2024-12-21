@@ -1,25 +1,26 @@
-import discord
-from discord.ext import commands
-from pathlib import Path
-from io import BytesIO
-import os
-import re
-import time
-from dotenv import load_dotenv
 import asyncio
+import io
+import os
+import random
+import re
 import sys
 import tempfile
-import random
-from PIL import Image, ImageEnhance
-from datetime import datetime
+import time
 import traceback  # Add this import
-from artrepo import ArtRepository
-from anims import AnimationProcessor, Keyframe
-from tetimi import ImageProcessor, EFFECT_ORDER, ANIMATION_PRESETS
-from channelpass import ChannelPassAnimator
-import io
-from typing import Dict, Any, Optional, Tuple, List, Union
+from datetime import datetime
+from io import BytesIO
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import discord
+from discord.ext import commands
+from dotenv import load_dotenv
+from PIL import Image, ImageEnhance
+
+from anims import AnimationProcessor, Keyframe
+from artrepo import ArtRepository
+from channelpass import ChannelPassAnimator
+from tetimi import ANIMATION_PRESETS, EFFECT_ORDER, ImageProcessor
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -39,19 +40,22 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 # Initialize the ArtRepository globally
 art_repo = ArtRepository(db_path="art_repository.db", storage_path="art_storage")
     
+import random
+import re
+from dataclasses import dataclass
 # First make sure these imports are at the top of your bot.py:
 from pathlib import Path
-import re
-import random
-from dataclasses import dataclass
-from typing import Dict, Any, Optional, Tuple, List, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from tetimi import ANIMATION_PRESETS, EFFECT_ORDER
 
+''' Defined in anims.py
 @dataclass
 class Keyframe:
     time: float  # 0.0 to 1.0
     value: Any
     easing: str = 'linear'  # Default to linear interpolation
+'''
 
 def parse_discord_args(args, IMAGES_FOLDER: str = "images") -> dict:
     """Parse command arguments with enhanced animation and keyframe support"""
@@ -129,23 +133,26 @@ def parse_discord_args(args, IMAGES_FOLDER: str = "images") -> dict:
         if not images:
             raise ValueError(f"No images found in {IMAGES_FOLDER}")
         result['image_path'] = str(random.choice(images))
-    
+        print("Image selected: ", result['image_path'])
+
     # Effect parameter handling with keyframe support
     params = {
-        'glitch': (r'--glitch(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 50, 
-                  "Glitch intensity must be between 0 and 50"),
-        'chroma': (r'--chroma(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 40, 
-                  "Chromatic aberration must be between 0 and 40"),
-        'scan': (r'--scan(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 200, 
+        'glitch': (r'--glitch(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 50,
+            "Glitch intensity must be between 0 and 50"),
+        'chroma': (r'--chroma(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 40,
+            "Chromatic aberration must be between 0 and 40"),
+        'scan': (r'--scan(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 200,
                 "Scan line gap must be between 0 and 200"),
-        'noise': (r'--noise(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 1, 
+        'noise': (r'--noise(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 1,
                  "Noise intensity must be between 0 and 1"),
-        'energy': (r'--energy(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 1, 
+        'energy': (r'--energy(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 1,
                   "Energy intensity must be between 0 and 1"),
-        'pulse': (r'--pulse(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 1, 
+        'pulse': (r'--pulse(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 1,
                  "Pulse intensity must be between 0 and 1"),
         'consciousness': (r'--consciousness(?:\s+(\d*\.?\d+)|\s+\[([^\]]+)\])', lambda x: 0 <= float(x) <= 1,
-                        "Consciousness intensity must be between 0 and 1")
+                        "Consciousness intensity must be between 0 and 1"),
+        'impact': (r'--impact(?:\s+(\S+))', lambda x: 0 < len(str(x)) <= 48,
+                        "IMPACT filter requires between 1 and 48 character of text"),
     }
     
     for param, (pattern, validator, error_msg) in params.items():
@@ -153,7 +160,11 @@ def parse_discord_args(args, IMAGES_FOLDER: str = "images") -> dict:
         if match:
             # Check if we have a single value or keyframe values
             if match.group(1):  # Single value
-                value = float(match.group(1))
+                try:
+                    value = float(match.group(1))
+                except ValueError:
+                    value = str(match.group(1))
+
                 if validator(value):
                     result[param] = value
                 else:
@@ -197,7 +208,7 @@ async def on_reaction_add(reaction, user):
 
 
 async def create_animation(image_input: Union[bytes, Image.Image, BytesIO], 
-                         preset_name: str) -> Path:
+            preset_name: str) -> Path | None:
     """Create animation from image using preset"""
     if preset_name not in ANIMATION_PRESETS:
         raise ValueError(f"Unknown animation preset: {preset_name}")
@@ -221,9 +232,9 @@ async def create_animation(image_input: Union[bytes, Image.Image, BytesIO],
         processor.cleanup()
 
 @bot.command(name='animate')
-async def animate(ctx, preset_name: str = None):
+async def animate(ctx, preset_name: str):
     """Create an animation using a preset"""
-    if preset_name is None:
+    if preset_name == "":
         # List available presets in a compact format
         presets_list = []
         for name, preset in ANIMATION_PRESETS.items():
@@ -335,11 +346,13 @@ async def image(ctx, *args):
     """Process image with effects and optional animation"""
     try:
         
+        image_path = INPUT_IMAGE
+
         # Handle image input
         if ctx.message.attachments:
             image_input = await ctx.message.attachments[0].read()
         else:
-            if 'random' in args:
+            if '--random' in args:
                 images = list(Path(IMAGES_FOLDER).glob('*.*'))
                 if not images:
                     await ctx.send(f"Error: No images found in {IMAGES_FOLDER}")
@@ -347,7 +360,7 @@ async def image(ctx, *args):
             if not Path("input.png").exists():
                 await ctx.send("No image provided and input.png not found!")
                 return
-            image_input = "input.png"
+            image_input = image_path
         
         # Parse arguments
         params = parse_discord_args(args)
@@ -600,7 +613,7 @@ async def ascii_animate_command(ctx, *args):
 @bot.command(name='rgb_gif')
 async def rgb_gif(ctx, *args):
     """Create RGB channel pass animation with keyframes
-    Usage: !rgb_gif [--g value,value,value] [--b value,value,value] [--frames num] [--random]
+    Usage: !rgb_gif [--g value,value,value] [--b value,value,value] [--frames num] [--random] [--impact text]
     Default: Creates a looping animation where green moves left and blue moves right"""
     try:
         # Parse arguments with defaults matching original channelpass behavior
@@ -640,6 +653,16 @@ async def rgb_gif(ctx, *args):
             elif arg == '--random':
                 use_random = True
                 i += 1
+            elif arg == '--impact':
+                if i + 1 < len(args):
+                    if len(args[i+1]) > 48:
+                        await ctx.send("IMPACT text must be less than 48 characters")
+                        return
+                    params['impact'] = args[i + 1]
+                    i += 2
+                else:
+                    await ctx.send("Missing text for IMPACT")
+                    return
             else:
                 i += 1
         
@@ -1063,13 +1086,13 @@ async def process_and_store(ctx, *args):
         result = processor.base_image.convert('RGBA')
         
         # Apply effects in order
-        for effect in ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse']:
+        for effect in ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse', 'impact']:
             if effect not in params:
                 continue
             processor.base_image = result.copy()
             result = processor.apply_effect(effect, params)
             # Generate title and tags based on effects used
-            effect_tags = [effect for effect in ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse'] 
+            effect_tags = [effect for effect in ['rgb', 'color', 'glitch', 'chroma', 'scan', 'noise', 'energy', 'pulse', "impact"] 
                           if effect in params]
             title = f"Processed_{time.strftime('%Y%m%d_%H%M%S')}"
             tags = ['processed'] + effect_tags
@@ -1323,7 +1346,8 @@ async def help_command(ctx):
             "--noise [0-1]\n"
             "--energy [0-1]\n"
             "--pulse [0-1]\n"
-            "--consciousness [0-1]"
+            "--consciousness [0-1]\n",
+            "--impact [Text] (Max Len 48)"
         ),
         inline=False
     )
