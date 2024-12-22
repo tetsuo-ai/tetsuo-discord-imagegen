@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from image_processing.config.presets import EFFECT_ORDER
+from image_processing.core.image_processor import ImageProcessor
 from PIL import Image, ImageDraw, ImageFont
 
-from tetimi import EFFECT_ORDER, ImageProcessor
 
-
-class ASCIIAnimationProcessor:
+class ASCIIAnimation:
     def __init__(
         self,
         image_input: Union[str, bytes, Image.Image, BytesIO],

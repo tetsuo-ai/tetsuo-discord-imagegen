@@ -1,5 +1,5 @@
 from PIL import Image, ImageDraw, ImageFont
-import numpy as np
+# import numpy as np
 import subprocess
 import tempfile
 import shutil
@@ -7,11 +7,11 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List, Union
 from io import BytesIO
-import os
+# import os
 
-from .image_processor import BaseImageProcessor
-from .effect_processor import EffectProcessor
-from .utils import ImageUtils
+from image_processing.core.image_processor import BaseImageProcessor
+from image_processing.core.effect_processor import EffectProcessor
+from image_processing.core.utils import ImageUtils
 
 class AnimationProcessor:
     """
