@@ -1,18 +1,21 @@
 import asyncio
 import os
 import sys
+from io import BytesIO
 from pathlib import Path
 
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from image_processing.config.config import ConfigManager
-from image_processing.core.animation_processor import AnimationProcessor
-from image_processing.core.ascii_processor import ASCIIProcessor
 
 # # from .command_parser import CommandParser
 from image_processing.core.effect_processor import EffectProcessor
 from image_processing.core.image_processor import ImageProcessor
+from image_processing.effects.animation_effects import (
+    AnimationProcessor,
+    ASCIIAnimationProcessor,
+)
 from image_processing.storage.repository import ImageRepository
 
 # Load environment variables
@@ -73,12 +76,12 @@ async def process_command(ctx, *args):
             processor.apply_effect(effect_name, params)
 
         # Save and send result
-        output = processor.get_current_image()
+        image = processor.get_current_image()
 
         # Store in repository if configured
         if command.tags:
             image_id = repository.store_image(
-                image=output,
+                image=image,
                 title=f"Processed_{ctx.author.name}",
                 creator_id=str(ctx.author.id),
                 creator_name=ctx.author.name,
@@ -87,8 +90,13 @@ async def process_command(ctx, *args):
             )
             await ctx.send(f"Image stored with ID: {image_id}")
 
+        with BytesIO() as image_binary:
+            image.save(image_binary, "PNG")
+            image_binary.seek(0)
         # Send processed image
-        await ctx.send(file=discord.File(output, filename="processed.png"))
+        file = discord.File(fp=image_binary, filename="processed.png")
+
+        await ctx.send(file=file)
 
     except Exception as e:
         await ctx.send(f"Error processing image: {str(e)}")
@@ -169,7 +177,7 @@ async def ascii_command(ctx, *args):
                 image_bytes = f.read()
 
         # Generate ASCII art
-        processor = ASCIIProcessor(image_bytes)
+        processor = ASCIIAnimationProcessor(image_bytes)
         ascii_art = processor.convert_to_ascii(
             cols=command.ascii_params.get("cols", 80),
             scale=command.ascii_params.get("scale", 0.43),
@@ -234,4 +242,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
