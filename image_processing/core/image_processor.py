@@ -19,7 +19,9 @@ from PIL import (
 
 class ImageProcessor:
     def __init__(
-        self, image_input: Union[str, bytes, Image.Image, BytesIO], points: bool = False
+        self,
+        image_input: Union[str, bytes, Image.Image, BytesIO, None],
+        points: bool = False,
     ):
         if isinstance(image_input, str):
             self.base_image = Image.open(image_input)
@@ -517,4 +519,3 @@ class BaseImageProcessor:
         """
         self.history = []
         self.current_image = self.original_image.copy()
-

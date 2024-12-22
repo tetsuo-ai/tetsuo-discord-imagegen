@@ -8,11 +8,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from image_processing.core.effect_processor import EffectProcessor
+from image_processing.core.image_processor import BaseImageProcessor
+from image_processing.core.utils import ImageUtils
 from PIL import Image
-
-from .effect_processor import EffectProcessor
-from .image_processor import BaseImageProcessor
-from .utils import ImageUtils
 
 
 class AnimationProcessor:
@@ -206,7 +205,7 @@ class AnimationProcessor:
         self.cleanup()
 
 
-class ASCIIAnimationProcessor:
+class ASCIIProcessor:
     """
     Handles creation and management of image effect animations.
     """
@@ -242,6 +241,45 @@ class ASCIIAnimationProcessor:
 
         # Initialize processors
         self.effect_processor = EffectProcessor(self.base_image)
+
+    def convert_to_ascii(
+        self, cols: int = 80, scale: float = 0.43, moreLevels: bool = False
+    ) -> List[str]:
+        """Convert image to ASCII art"""
+        # Define ASCII characters
+        chars = (
+            np.asarray(list(" .,:;irsXA253hMHGS#9B&@"))
+            if moreLevels
+            else np.asarray(list(" .:-=+*#%@"))
+        )
+
+        # Calculate dimensions
+        img = self.base_image.copy()
+        W, H = img.size
+        w = W / cols
+        h = w / scale
+        rows = int(H / h)
+
+        # Resize image
+        if cols > W or rows > H:
+            raise ValueError("Image too small for specified columns!")
+
+        img = img.resize((cols, rows), Image.Resampling.LANCZOS)
+        img = img.convert("L")  # Convert to grayscale
+
+        # Map pixels to characters
+        pixels = np.array(img)
+        result = []
+        for row in range(rows):
+            line = ""
+            for col in range(cols):
+                pixel_value = pixels[row, col]
+                # Map pixel value to character index
+                char_idx = (pixel_value * (len(chars) - 1) / 255).astype(int)
+                line += chars[char_idx]
+            result.append(line)
+
+        return result
 
     def generate_frames(
         self, effects: List[Tuple[str, Dict[str, Any]]], num_frames: int = 30
