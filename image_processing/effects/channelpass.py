@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from PIL import Image
 
-from tetimi import ImageProcessor
+from ..core.image_processor import ImageProcessor
 
 
 class ChannelPassAnimator:

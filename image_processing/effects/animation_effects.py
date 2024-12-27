@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from image_processing.core.effect_processor import EffectProcessor
-from image_processing.core.image_processor import BaseImageProcessor
-from image_processing.core.utils import ImageUtils
 from PIL import Image
+
+from ..core.effect_processor import EffectProcessor
+from ..core.image_processor import BaseImageProcessor
+from ..core.utils import ImageUtils
 
 
 class AnimationProcessor:

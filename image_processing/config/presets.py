@@ -47,4 +47,3 @@ ANIMATION_PRESETS = {
         "description": "Psychic energy visualization",
     },
 }
-
