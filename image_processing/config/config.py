@@ -93,6 +93,12 @@ class ConfigManager:
         effect_params = Dict[str, Dict[str, Any]]
 
         effect_params = {
+            "random": {
+                "constraints": {
+                    None: None
+                },
+                "description": "Random Image Selection",
+            },
             "glitch": {
                 "constraints": {
                     "intensity": {"type": float, "min": 0.0, "max": 1.0,

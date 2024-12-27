@@ -1,11 +1,10 @@
 # image_processing/core/effect_processor.py
 
-import math
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
 from .image_processor import BaseImageProcessor
 
@@ -57,6 +56,41 @@ class EffectProcessor(BaseImageProcessor):
                 arr[y, :] = np.roll(arr[y, :], offset, axis=0)
 
         self.current_image = Image.fromarray(arr)
+
+    def apply_impact_text(self, text: str, font_size: int = 50) -> Image.Image:
+        # Open the image and convert it to RGBA mode
+        self.ensure_rgba()
+        impact_image = self.current_image.copy()
+        # Create a new image for the text overlay with transparency
+        txt = Image.new("RGBA", impact_image.size, (255, 255, 255, 0))
+        # Load the font
+        font = ImageFont.truetype("impact.ttf", 70)
+        # Draw context
+        d = ImageDraw.Draw(txt)
+        # Define the text and colors
+        outline_color = (0, 0, 0, 255)  # Black with full opacity
+        text_color = (255, 255, 255, 255)  # White with full opacity
+        # Calculate text size to center it
+        text_bbox = d.textbbox((0, 0), text, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        position = (
+            (impact_image.width - text_width) // 2,
+            (impact_image.height - text_height) // 1.15,
+        )
+        # Draw outline by drawing the text shifted slightly in all directions
+        for outline_offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+            d.text(
+                (position[0] + outline_offset[0], position[1] + outline_offset[1]),
+                text,
+                fill=outline_color,
+                font=font,
+            )
+            # Draw the main text over the outline
+            d.text(position, text, fill=text_color, font=font)
+        # Combine the text overlay with the original impact_image
+        combined = Image.alpha_composite(impact_image, txt)
+        return combined
 
     def apply_chromatic_aberration(self, offset: float) -> None:
         """

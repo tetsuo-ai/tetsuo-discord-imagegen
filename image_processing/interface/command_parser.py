@@ -4,7 +4,7 @@ import random
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Tuple, Union, Any
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 from ..config.config import ConfigManager
 
@@ -43,11 +43,9 @@ class ASCIIParams:
 
 @dataclass
 class ParsedCommand:
-    command: Literal["process", "animate", "ascii", "image"]
+    command: str
     image_path: Optional[str]
-    effects: List[Tuple[str, Dict[str, Union[float, Tuple[float, float]]]]] = field(
-        default_factory=list
-    )
+    effects: Dict[str, Dict[str, Any]]
     animation_params: Optional[AnimationParams] = None
     ascii_params: Optional[ASCIIParams] = None
     output_params: OutputParams = field(default_factory=OutputParams)
@@ -63,20 +61,22 @@ class CommandParser:
     def __init__(self, configure: ConfigManager):
         self.config = configure
         self.logger = logging.getLogger("CommandParser")
+        self.commands = ["animate", "ascii", "image"]
 
     def _create_parser(self) -> argparse.ArgumentParser:
-        parser = argparse.ArgumentParser(description="Image processing command parser")
-        subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+        parser = argparse.ArgumentParser(
+                description="Image processing command parser")
+        subparsers = parser.add_subparsers(
+                dest="command", help="Command to execute")
 
-        process_parser = subparsers.add_parser(
-            "process", help="Process image with effects"
-        )
+        # Initialize Subparsers
         animate_parser = subparsers.add_parser("animate", help="Create animation")
         ascii_parser = subparsers.add_parser("ascii", help="Generate ASCII art")
         image_parser = subparsers.add_parser("image", help="Input image path")
-        self._add_arguments(process_parser)
-        self._add_arguments(animate_parser)
-        self._add_arguments(ascii_parser)
+#        self._add_arguments(process_parser)
+#        self._add_arguments(animate_parser)
+#        self._add_arguments(ascii_parser)
+        self._add_effect_arguments(image_parser)
 
 #        self._add_animation_arguments(animate_parser)
         self._add_ascii_arguments(ascii_parser)
@@ -87,14 +87,16 @@ class CommandParser:
     def _build_help(self, option_def: Dict, effect_params: Dict, effect,
                     description: str) -> str:
         help_output = f"--{effect}\n"
-        for name in option_def['names']:
-            opts = effect_params[effect]['constraints'][name]
+        if option_def['names'][0] is not None:
 
-            help_output += f"\t[{opts['min']} - {opts['max']}] [default: {opts['default']}]\n"
+            for opt_name in option_def['names']:
+                opts = effect_params[effect]['constraints'][opt_name]
+
+                help_output += \
+               f"\t[{opts['min']} - {opts['max']}] [default: {opts['default']}]\n"
         help_output += f"{description}\n"
 
         return help_output
-
 
     def _build_option_list(self, constraints: Dict) -> Dict:
         parsed_options = {
@@ -125,7 +127,7 @@ class CommandParser:
                 result = arg
         return result
 
-    def _add_arguments(self, parser: argparse.ArgumentParser) -> None:
+    def _add_effect_arguments(self, parser: argparse.ArgumentParser) -> None:
         try:
             effect_dict: Dict[str, Dict[str, Any]] = self.config.effect_params
             effect = str()
@@ -138,7 +140,7 @@ class CommandParser:
                         self.config.effect_params[effect]["constraints"])
 
             help_msg = self._build_help(option_def, self.config.effect_params,
-                                effect, params['description'])
+                                        effect, params['description'])
         except Exception as e:
             raise ValueError(f"Error while parsing command: {str(e)}")
 
@@ -150,7 +152,14 @@ class CommandParser:
                 type=constraints[option_def['names'][0]]["type"],
                 help=help_msg
             )
+        # All arguments which do not take options use None as option name
+        elif option_def['names'][0] is None:
+            parser.add_argument(
+                    f"--{effect}",
+                    help=help_msg
+            )
         else:
+            # Handle single option arguments
             if len(option_def['types']) == 1:
                 parser.add_argument(
                     f"--{effect}",
@@ -159,6 +168,7 @@ class CommandParser:
                     help=help_msg
                 )
             else:
+                # Handle multiple option arguments
                 parser.add_argument(
                     f"--{effect}",
                     type=self.multi_type,
@@ -194,17 +204,18 @@ class CommandParser:
     async def parse_command(
         self, ctx, command_str: str, image_input: Optional[Union[str, Path]] = None
     ) -> ParsedCommand:
-        await ctx.send("Got to parse_command()")
         parser = self._create_parser()
-        await ctx.send("_create_parser() isn't broken.")
 
         try:
             args = parser.parse_args(command_str.split())
         except argparse.ArgumentError as e:
             raise ValueError(f"Invalid command arguments: {str(e)}")
 
-        if args.command not in ("process", "animate", "ascii"):
+        if args.command not in self.commands:
             raise ValueError(f"Invalid command: {args.command}")
+
+#        for effect, option in args.items():
+#            if option 
 
         result = ParsedCommand(
             command=args.command,

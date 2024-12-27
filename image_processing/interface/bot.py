@@ -47,9 +47,9 @@ async def on_reaction_add(reaction, user):
         if reaction.message.author == bot.user:
             await reaction.message.delete()
 
-
-@bot.command(name="process")
-async def process_command(ctx, *args):
+'''
+@bot.command(name="image")
+async def image_command(ctx, *args):
     """Process an image with effects."""
     try:
         # Parse command
@@ -105,7 +105,7 @@ async def process_command(ctx, *args):
 
     except Exception as e:
         await ctx.send(f"Error processing image, process_command: {str(e)}")
-
+'''
 
 @bot.command(name="image")
 async def image_command(ctx, *args):

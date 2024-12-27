@@ -288,6 +288,7 @@ class BaseImageProcessor:
         self.current_image = self.original_image.copy()
 
 
+'''
 class ImageProcessor(BaseImageProcessor):
     def __init__(
         self,
@@ -532,3 +533,4 @@ class ImageProcessor(BaseImageProcessor):
                 return self.add_color_overlay((*value, params.get("rgbalpha", 255)))
 
         return self.base_image
+    '''
