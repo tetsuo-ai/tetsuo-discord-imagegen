@@ -76,6 +76,7 @@ class ConfigManager:
 
         # Load effect configurations
         self.effect_order = [
+            "impact",
             "rgb",
             "color",
             "glitch",
@@ -120,6 +121,7 @@ class ConfigManager:
                                 "default": 0.5},
                 },
                 "description": "Scan line effect",
+                "nargs": '*',
             },
             "noise": {
                 "constraints": {
@@ -170,6 +172,7 @@ class ConfigManager:
                     "font": {"type": int, "min": 1, "max": 100, "default": 70},
                 },
                 "description": "Impact effect length",
+                "nargs": "*",
             },
             "frames": {
                 "constraints": {
@@ -185,10 +188,15 @@ class ConfigManager:
             },
             "rgb": {
                 "constraints": {
-                    "count": {"type": float, "min": 0, "max": 255,
+                    "r": {"type": float, "min": 0, "max": 255,
+                              "default": 75},
+                    "g": {"type": float, "min": 0, "max": 255,
+                              "default": 75},
+                    "b": {"type": float, "min": 0, "max": 255,
                               "default": 75},
                 },
                 "description": "RGB color",
+                "nargs": 3,
             },
             "rgbalpha": {
                 "constraints": {
