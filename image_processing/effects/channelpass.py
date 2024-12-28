@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from PIL import Image
 
-from ..core.image_processor import ImageProcessor
+from ..core.effect_processor import EffectProcessor
 
 
 class ChannelPassAnimator:
@@ -157,7 +157,7 @@ class ChannelPassAnimator:
                     frame = frame.resize(new_size, Image.Resampling.LANCZOS)
 
                 if impact_text != "":
-                    ip = ImageProcessor(frame)
+                    ip = EffectProcessor(frame)
                     frame = ip.apply_impact_text(impact_text)
 
                 self.frames.append(frame)  # Store frame for GIF
