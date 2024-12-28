@@ -260,7 +260,8 @@ class BaseImageProcessor:
         return True
 
     def save(
-        self, path: Union[str, Path, BytesIO], format: Optional[str] = None
+        self, path: Union[str, Path, BytesIO], format: Optional[str] = None,
+            quality: Optional[int] = 95
     ) -> None:
         """
         Save the current image.
@@ -269,7 +270,7 @@ class BaseImageProcessor:
             path: Output path or BytesIO object
             format: Optional format override (e.g., 'PNG', 'JPEG')
         """
-        self.current_image.save(path, format=format)
+        self.current_image.save(path, format=format, quality=quality)
 
     def get_current_image(self) -> Image.Image:
         """

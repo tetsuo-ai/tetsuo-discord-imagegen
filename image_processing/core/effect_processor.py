@@ -15,7 +15,7 @@ class EffectProcessor(BaseImageProcessor):
     """
 
     def __init__(
-        self, image_input: Union[str, bytes, Image.Image, BytesIO], points: bool = False
+        self, image_input: Union[str, bytes, Image.Image, BytesIO, None], points: bool = False
     ):
         if isinstance(image_input, str):
             self.base_image = Image.open(image_input)
@@ -25,6 +25,9 @@ class EffectProcessor(BaseImageProcessor):
             self.base_image = image_input
         elif isinstance(image_input, BytesIO):
             self.base_image = Image.open(image_input)
+
+        self.current_image = self.base_image.copy()
+        self.history = [self.base_image.copy()]
 
     def apply_glitch(self, intensity: float) -> None:
         """
@@ -64,7 +67,7 @@ class EffectProcessor(BaseImageProcessor):
         # Create a new image for the text overlay with transparency
         txt = Image.new("RGBA", impact_image.size, (255, 255, 255, 0))
         # Load the font
-        font = ImageFont.truetype("impact.ttf", 70)
+        font = ImageFont.truetype("impact.ttf", font_size)
         # Draw context
         d = ImageDraw.Draw(txt)
         # Define the text and colors
@@ -236,7 +239,12 @@ class EffectProcessor(BaseImageProcessor):
             effect_name: Name of the effect to apply
             params: Dictionary of effect parameters
         """
+
+        # These defaults should not be hardcoded.
         effect_map = {
+            "impact": lambda p: 
+                self.apply_impact_text(p.get("text", "$TETSUO"),
+                                       p.get("font_size", 50)),
             "glitch": lambda p: self.apply_glitch(p.get("intensity", 0.5)),
             "chroma": lambda p: self.apply_chromatic_aberration(p.get("offset", 0.5)),
             "scan": lambda p: self.apply_scan_lines(
@@ -253,6 +261,7 @@ class EffectProcessor(BaseImageProcessor):
         if effect_name not in effect_map:
             raise ValueError(f"Unknown effect: {effect_name}")
 
+        # Apply effect
         effect_map[effect_name](params)
 
     def apply_effects_sequence(self, effects: List[Tuple[str, Dict[str, Any]]]) -> None:
