@@ -167,7 +167,7 @@ async def _handle_animation(ctx, parsed: ParsedCommand):
         anim_processor = AnimationProcessor(processor.base_image)
 
         try:
-            fps = parsed.effects['fps']['option1']
+            fps = parsed.effects['fps']['count']
         except KeyError:
             fps = AnimationConfig.default_fps
 
@@ -209,21 +209,22 @@ async def _handle_static_image(ctx, parsed: ParsedCommand):
     for effect, params in parsed.effects.items():
         e_processor.apply_effect(effect, params)
 
-        # Apply output parameters
+    # Apply output parameters
+    '''
     output_format = parsed.output_params.get("format", "PNG")
     quality = parsed.output_params.get("quality", 95)
+    '''
+
+    # Temporary until output_params is implemented
+    output_format = "PNG"
+    quality = 95
 
     # Save and send
     buffer = BytesIO()
-    processor.base_image.save(
+    e_processor.current_image.save(
         buffer,
         format=output_format,
         quality=quality,
-        **{
-            k: v
-            for k, v in parsed.output_params.items()
-            if k in ["alpha", "coloralpha", "rgbalpha"]
-        },
     )
     buffer.seek(0)
 
@@ -252,6 +253,16 @@ async def animate_command(ctx, *args):
             with open("input.png", "rb") as f:
                 image_bytes = f.read()
 
+        try:
+            frames = command.effects['frames']['count']
+        except KeyError:
+            frames = AnimationConfig.default_frames
+
+        try: 
+            fps = command.effects['fps']['count']
+        except KeyError:
+            fps = command.effects['fps']['count']
+            
         # Create animation
         processor = AnimationProcessor(image_bytes)
         try:
@@ -259,11 +270,11 @@ async def animate_command(ctx, *args):
 
             frames = processor.generate_frames(
                 effects=command.effects,
-                num_frames=command.animation_params.get("frames", 30),
+                num_frames=frames,
             )
 
             video_path = processor.create_video(
-                frame_paths=frames, frame_rate=command.animation_params.get("fps", 24)
+                frame_paths=frames, frame_rate=fps
             )
 
             if video_path and video_path.exists():
@@ -295,7 +306,7 @@ async def ascii_command(ctx, *args):
     """Create ASCII art from an image."""
     try:
         # Parse command
-        command = command_parser.parse_command(f"ascii {' '.join(args)}")
+        command = await command_parser.parse_command(ctx, f"ascii {' '.join(args)}")
 
         # Get input image
         if ctx.message.attachments:
@@ -308,11 +319,15 @@ async def ascii_command(ctx, *args):
             with open("input.png", "rb") as f:
                 image_bytes = f.read()
 
+        if command.ascii_params is None:
+            ctx.send("No ASCII parameters specified")
+            return
+
         # Generate ASCII art
         processor = ASCIIProcessor(image_bytes)
         ascii_art = processor.convert_to_ascii(
-            cols=command.ascii_params.get("cols", 80),
-            scale=command.ascii_params.get("scale", 0.43),
+            cols=command.ascii_params.cols,
+            scale=command.ascii_params.scale,
             moreLevels=True,
         )
 

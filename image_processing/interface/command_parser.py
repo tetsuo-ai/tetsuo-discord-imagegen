@@ -74,9 +74,8 @@ class CommandParser:
         animate_parser = subparsers.add_parser("animate", help="Create animation")
         ascii_parser = subparsers.add_parser("ascii", help="Generate ASCII art")
         image_parser = subparsers.add_parser("image", help="Input image path")
-#        self._add_arguments(process_parser)
 #        self._add_arguments(animate_parser)
-#        self._add_arguments(ascii_parser)
+        self._add_ascii_arguments(ascii_parser)
         self._add_effect_arguments(image_parser)
 
 #        self._add_animation_arguments(animate_parser)
