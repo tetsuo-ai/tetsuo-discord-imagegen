@@ -176,13 +176,13 @@ class ConfigManager:
             },
             "frames": {
                 "constraints": {
-                    "count": {"type": int, "min": 1, "max": 48, "default": 24},
+                    "count": {"type": int, "min": 1, "max": 48, "default": 30},
                 },
                 "description": "Frame count for animations",
             },
             "fps": {
                 "constraints": {
-                    "count": {"type": int, "min": 2, "max": 60, "default": 6},
+                    "count": {"type": int, "min": 2, "max": 60, "default": 24},
                 },
                 "description": "Fps count for animation",
             },

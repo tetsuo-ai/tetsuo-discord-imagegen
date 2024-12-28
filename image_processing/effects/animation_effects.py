@@ -86,7 +86,7 @@ class AnimationProcessor:
         return frame_params
 
     def generate_frames(
-        self, effects: List[Tuple[str, Dict[str, Any]]], num_frames: int = 30
+        self, effects: Dict[str, Dict[str, Any]], num_frames: int = 30
     ) -> List[Path]:
         """Generate animation frames with improved multi-effect support."""
         frame_paths = []

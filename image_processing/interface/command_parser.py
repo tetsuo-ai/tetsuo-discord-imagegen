@@ -61,6 +61,7 @@ class CommandParser:
     def __init__(self, configure: ConfigManager):
         self.config = configure
         self.logger = logging.getLogger("CommandParser")
+        self.effect_params = configure.effect_params
         self.commands = ["animate", "ascii", "image"]
 
     def _create_parser(self) -> argparse.ArgumentParser:
@@ -129,7 +130,7 @@ class CommandParser:
 
     def _add_effect_arguments(self, parser: argparse.ArgumentParser) -> None:
         try:
-            effect_dict: Dict[str, Dict[str, Any]] = self.config.effect_params
+            effect_dict: Dict[str, Dict[str, Any]] = self.effect_params
             effect = str()
             params: Dict[str, Any] = {}
 
@@ -137,14 +138,14 @@ class CommandParser:
 
             for effect, params in effect_dict.items():
                 option_def = self._build_option_list(
-                        self.config.effect_params[effect]["constraints"])
+                        self.effect_params[effect]["constraints"])
 
-            help_msg = self._build_help(option_def, self.config.effect_params,
+            help_msg = self._build_help(option_def, self.effect_params,
                                         effect, params['description'])
         except Exception as e:
             raise ValueError(f"Error while parsing command: {str(e)}")
 
-        constraints = self.config.effect_params[effect]["constraints"]
+        constraints = self.effect_params[effect]["constraints"]
 
         if len(option_def['names']) == 1:
             parser.add_argument(
@@ -214,29 +215,33 @@ class CommandParser:
         if args.command not in self.commands:
             raise ValueError(f"Invalid command: {args.command}")
 
-#        for effect, option in args.items():
-#            if option 
+        user_effects = {}
+        for effect, option in args.items():
+            constraints = self.effect_params[effect]["constraints"]
+            if isinstance(option, list):
+
+                constraint_names = constraints.keys()
+
+                for i, item in enumerate(option):
+                    if i >= len(constraints):
+                        break
+                    user_effects[effect] = {f"{next(iter(constraint_names))}": item}
+            else:
+                user_effects[effect] = {f'{constraints.keys()[0]}': option}
+
+        if "--random" in user_effects:
+            image_path = self._get_random_image_path()
+        else:
+            image_path = \
+                    str(image_input) if image_input else self.config.INPUT_IMAGE
 
         result = ParsedCommand(
             command=args.command,
-            image_path=str(image_input) if image_input else args.image,
+            image_path=image_path,
             preset_name=args.preset,
+            effects=user_effects,
             tags=args.tags or [],
         )
-
-        if args.preset:
-            preset = self.config.get_preset(args.preset)
-            if not preset or not isinstance(preset, dict) or "params" not in preset:
-                raise ValueError(f"Invalid preset configuration: {args.preset}")
-            result.effects.extend(
-                [(effect, params) for effect, params in preset["params"].items()]
-            )
-
-        for effect, params in self.config.effect_params.items():
-            effect_value = getattr(args, effect, None)
-            if effect_value is not None:
-                params = self._create_effect_params(effect, effect_value, params)
-                result.effects.append((effect, params))
 
         if args.command == "animate":
             result.animation_params = self._create_animation_params(args)
@@ -251,16 +256,6 @@ class CommandParser:
         self._validate_command(result)
         return result
 
-    def _create_effect_params(
-        self, effect: str, values: List[float], effect_config: Dict
-    ) -> Dict[str, Union[float, Tuple[float, float]]]:
-        if not values:
-            raise ValueError(f"No values provided for effect: {effect}")
-
-        has_intensity = any("intensity" in p for p in effect_config.values())
-        if len(values) == 1:
-            return {"intensity": values[0]} if has_intensity else {"value": values[0]}
-        return {"intensity": tuple(values[:2])} if has_intensity else {"values": values}
 
     def _create_animation_params(self, args: argparse.Namespace) -> AnimationParams:
         if not (
