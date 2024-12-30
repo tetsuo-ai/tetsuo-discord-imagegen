@@ -1,30 +1,29 @@
 import asyncio
-import os
 import sys
+from io import BytesIO
 from pathlib import Path
+from typing import Optional, Union
 
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from image_processing.config.config import ConfigManager
-from image_processing.core.animation_processor import AnimationProcessor
-from image_processing.core.ascii_processor import ASCIIProcessor
 
-# # from .command_parser import CommandParser
-from image_processing.core.effect_processor import EffectProcessor
-from image_processing.core.image_processor import ImageProcessor
-from image_processing.storage.repository import ImageRepository
+from ..config.config import ConfigManager, AnimationConfig
+from ..core.effect_processor import EffectProcessor
+from ..effects.animation_effects import AnimationProcessor, ASCIIProcessor
+from ..storage.repository import ImageRepository
+from .command_parser import CommandParser, ParsedCommand
 
 # Load environment variables
-load_dotenv()
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-
 # Initialize configuration
-config = ConfigManager(config_dir="config")
+load_dotenv()
+configs = ConfigManager(config_dir="config")
+DISCORD_TOKEN = configs.DISCORD_TOKEN
+
 repository = ImageRepository(
     db_path="image_repository.db", storage_path="image_storage"
 )
-command_parser = CommandParser(config)
+command_parser = CommandParser(configs)
 
 # Set up Discord bot
 intents = discord.Intents.default()
@@ -46,52 +45,197 @@ async def on_reaction_add(reaction, user):
         if reaction.message.author == bot.user:
             await reaction.message.delete()
 
-
-@bot.command(name="process")
-async def process_command(ctx, *args):
+'''
+@bot.command(name="image")
+async def image_command(ctx, *args):
     """Process an image with effects."""
     try:
         # Parse command
-        command = command_parser.parse_command(" ".join(args))
+        command = await command_parser.parse_command(ctx, f"process {' '.join(args)}")
+
+        await ctx.send("Command returned {type(command)}")
 
         # Get input image
         if ctx.message.attachments:
             attachment = ctx.message.attachments[0]
             image_bytes = await attachment.read()
-            source = "uploaded image"
-        else:
-            if not Path("input.png").exists():
-                await ctx.send("Please attach an image or ensure input.png exists!")
-                return
-            with open("input.png", "rb") as f:
-                image_bytes = f.read()
-            source = "input.png"
 
         # Process image
-        processor = EffectProcessor(image_bytes)
-        for effect_name, params in command.effects:
-            processor.apply_effect(effect_name, params)
+    except Exception as e:
+        await ctx.send(f"Error selecting image, process_command: {str(e)}")
+        return
+
+    try:
+        my_params = {}
+        processor = BaseImageProcessor(image_bytes)
+        e_processor = EffectProcessor(processor.original_image)
+        if len(command.effects) > 0:
+            for effect_name, params in command.effects:
+                e_processor.apply_effect(effect_name, params)
+                my_params[effect_name] = params
 
         # Save and send result
-        output = processor.get_current_image()
+        my_image = e_processor.get_current_image()
 
+    except Exception as e:
+        await ctx.send(f"Error processings Effects, {str(e)}")
+
+    try:
         # Store in repository if configured
         if command.tags:
             image_id = repository.store_image(
-                image=output,
+                image=my_image,
                 title=f"Processed_{ctx.author.name}",
                 creator_id=str(ctx.author.id),
                 creator_name=ctx.author.name,
                 tags=command.tags,
-                parameters=dict(command.effects),
+                parameters=[None if len(my_params.keys()) == 0 else my_params],
             )
             await ctx.send(f"Image stored with ID: {image_id}")
 
+        with BytesIO() as image_binary:
+            my_image.save(image_binary, "PNG")
+            image_binary.seek(0)
         # Send processed image
-        await ctx.send(file=discord.File(output, filename="processed.png"))
+        file = discord.File(fp=image_binary, filename="processed.png")
+
+        await ctx.send(file=file)
 
     except Exception as e:
-        await ctx.send(f"Error processing image: {str(e)}")
+        await ctx.send(f"Error processing image, process_command: {str(e)}")
+'''
+
+
+@bot.command(name="image")
+async def image_command(ctx, *args):
+    """Process image with effects and optional animation"""
+    try:
+        # Get image input
+        image_input = await _get_image_input(ctx)
+        if not image_input:
+            image_input = None
+
+        # Parse command
+        try:
+            parsed = await command_parser.parse_command(
+                ctx, f"image {' '.join(args)}", image_input
+            )
+            await ctx.send(f"{parsed}")
+        except ValueError as e:
+            await ctx.send(f"Invalid command: {str(e)}")
+            return
+
+        if "--animate" in parsed.effects:
+            await ctx.send(f"{parsed.effects.items()}")
+            await _handle_animation(ctx, parsed)
+        else:
+            await ctx.send(f"{parsed.effects.items()}")
+            await _handle_static_image(ctx, parsed)
+
+    except Exception as e:
+        # self.logger.error(f"Error processing image command: {str(e)}", exc_info=True)
+        await ctx.send(f"Error processing image, image_command: {str(e)}")
+
+
+async def _get_image_input(ctx) -> Optional[Union[str, Path]]:
+    """Get image input from message attachment or local file"""
+    if ctx.message.attachments:
+        # Save attachment to temporary file
+        attachment = ctx.message.attachments[0]
+        image_data = await attachment.read()
+        temp_path = Path("temp_input.png")
+        temp_path.write_bytes(image_data)
+
+        return str(temp_path)
+
+    # Check for local input.png
+    if Path("input.png").exists():
+        return "input.png"
+
+    # Will use random image if specified in command args
+    return None
+
+
+async def _handle_animation(ctx, parsed: ParsedCommand):
+    """Handle animation generation and sending"""
+    status_msg = await ctx.send("Generating animation...")
+
+    try:
+        # Initialize processor
+        if parsed.image_path is None:
+            parsed.image_path = configs.INPUT_IMAGE
+
+        processor = EffectProcessor(parsed.image_path)
+        anim_processor = AnimationProcessor(processor.base_image)
+
+        try:
+            fps = parsed.effects['fps']['count']
+        except KeyError:
+            fps = AnimationConfig.default_fps
+
+        # Generate frames
+        frames = anim_processor.generate_frames(
+            effects=parsed.effects,
+            num_frames=fps,
+        )
+
+        # Create video
+        video_path = anim_processor.create_video(
+            frame_paths=frames,
+            frame_rate=fps,
+            output_path="animation.mp4",
+        )
+
+        if video_path and video_path.exists():
+            await status_msg.edit(content="Animation complete!")
+            await ctx.send(file=discord.File(str(video_path)))
+        else:
+            await status_msg.edit(content="Failed to create animation")
+
+    except Exception as e:
+        # self.logger.error(f"Error creating animation: {str(e)}", exc_info=True)
+        await status_msg.edit(content=f"Error creating animation: {str(e)}")
+    finally:
+        if "anim_processor" in locals():
+            anim_processor.cleanup()
+
+
+async def _handle_static_image(ctx, parsed: ParsedCommand):
+    """Handle static image processing and sending"""
+
+    load_image = configs.INPUT_IMAGE if parsed.image_path is None else parsed.image_path
+
+    e_processor = EffectProcessor(load_image)
+
+    # Apply all effects in order
+    print(parsed.effects)
+
+    e_processor.apply_effects_sequence(parsed.effects)
+
+    # Apply output parameters
+    '''
+    output_format = parsed.output_params.get("format", "PNG")
+    quality = parsed.output_params.get("quality", 95)
+    '''
+
+    # Temporary until output_params is implemented
+    output_format = "PNG"
+    quality = 95
+
+    # Save and send
+    buffer = BytesIO()
+    e_processor.current_image.save(
+        buffer,
+        format=output_format,
+        quality=quality,
+    )
+    buffer.seek(0)
+
+    filename = f"processed.{output_format.lower()}"
+    await ctx.send(
+        file=discord.File(buffer, filename),
+        content=f"Tags: {', '.join(parsed.tags)}" if parsed.tags else None,
+    )
 
 
 @bot.command(name="animate")
@@ -99,7 +243,7 @@ async def animate_command(ctx, *args):
     """Create an animation with effects."""
     try:
         # Parse command
-        command = command_parser.parse_command(f"animate {' '.join(args)}")
+        command = await command_parser.parse_command(ctx, f"animate {' '.join(args)}")
 
         # Get input image
         if ctx.message.attachments:
@@ -111,6 +255,16 @@ async def animate_command(ctx, *args):
                 return
             with open("input.png", "rb") as f:
                 image_bytes = f.read()
+
+        try:
+            frames = command.effects['frames']['count']
+        except KeyError:
+            frames = AnimationConfig.default_frames
+
+        try:
+            fps = command.effects['fps']['count']
+        except KeyError:
+            fps = AnimationConfig.default_fps
 
         # Create animation
         processor = AnimationProcessor(image_bytes)
@@ -119,11 +273,11 @@ async def animate_command(ctx, *args):
 
             frames = processor.generate_frames(
                 effects=command.effects,
-                num_frames=command.animation_params.get("frames", 30),
+                num_frames=frames,
             )
 
             video_path = processor.create_video(
-                frame_paths=frames, frame_rate=command.animation_params.get("fps", 24)
+                frame_paths=frames, frame_rate=fps
             )
 
             if video_path and video_path.exists():
@@ -155,7 +309,7 @@ async def ascii_command(ctx, *args):
     """Create ASCII art from an image."""
     try:
         # Parse command
-        command = command_parser.parse_command(f"ascii {' '.join(args)}")
+        command = await command_parser.parse_command(ctx, f"ascii {' '.join(args)}")
 
         # Get input image
         if ctx.message.attachments:
@@ -168,11 +322,15 @@ async def ascii_command(ctx, *args):
             with open("input.png", "rb") as f:
                 image_bytes = f.read()
 
+        if command.ascii_params is None:
+            ctx.send("No ASCII parameters specified")
+            return
+
         # Generate ASCII art
         processor = ASCIIProcessor(image_bytes)
         ascii_art = processor.convert_to_ascii(
-            cols=command.ascii_params.get("cols", 80),
-            scale=command.ascii_params.get("scale", 0.43),
+            cols=command.ascii_params.cols,
+            scale=command.ascii_params.scale,
             moreLevels=True,
         )
 
@@ -204,14 +362,14 @@ async def ascii_command(ctx, *args):
 @bot.command(name="help")
 async def help_command(ctx):
     """Show help information."""
-    await ctx.send(command_parser.format_help())
+    await ctx.send(command_parser.format_help(ctx))
 
 
 @bot.command(name="examples")
 async def examples_command(ctx):
     """Show example commands."""
-    examples = command_parser.get_example_commands()
-    await ctx.send("Example commands:\n" + "\n".join(examples))
+    # examples = command_parser.get_example_commands()
+    await ctx.send("Example commands: TBD\n")  # + "\n".join(examples))
 
 
 def main():
@@ -234,4 +392,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

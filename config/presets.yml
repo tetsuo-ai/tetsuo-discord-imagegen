@@ -1,0 +1,41 @@
+cyberpunk:
+  description: Cyberpunk-style glitch effect with scanning
+  fps: 24
+  frames: 30
+  params:
+    chroma:
+      offset: !!python/tuple
+      - 0.2
+      - 0.4
+    consciousness:
+      intensity: !!python/tuple
+      - 0.3
+      - 0.7
+    glitch:
+      intensity: !!python/tuple
+      - 0.3
+      - 0.8
+    scan:
+      gap: !!python/tuple
+      - 2
+      - 4
+      opacity: !!python/tuple
+      - 0.4
+      - 0.6
+psychic:
+  description: Psychic energy visualization
+  fps: 24
+  frames: 30
+  params:
+    consciousness:
+      intensity: !!python/tuple
+      - 0.5
+      - 0.9
+    energy:
+      intensity: !!python/tuple
+      - 0.4
+      - 0.8
+    pulse:
+      intensity: !!python/tuple
+      - 0.2
+      - 0.6
