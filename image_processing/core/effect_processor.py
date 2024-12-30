@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
 from .image_processor import BaseImageProcessor
+from ..config.config import get_effect_order
 
 
 class EffectProcessor(BaseImageProcessor):
@@ -26,6 +27,7 @@ class EffectProcessor(BaseImageProcessor):
         elif isinstance(image_input, BytesIO):
             self.base_image = Image.open(image_input)
 
+        self.effect_order = get_effect_order()
         self.current_image = self.base_image.copy()
         self.history = [self.base_image.copy()]
 
@@ -60,40 +62,44 @@ class EffectProcessor(BaseImageProcessor):
 
         self.current_image = Image.fromarray(arr)
 
-    def apply_impact_text(self, text: str, font_size: int = 50) -> Image.Image:
+    def apply_impact_text(self, text: str, font_size: int = 50) -> None:
         # Open the image and convert it to RGBA mode
-        self.ensure_rgba()
-        impact_image = self.current_image.copy()
-        # Create a new image for the text overlay with transparency
-        txt = Image.new("RGBA", impact_image.size, (255, 255, 255, 0))
-        # Load the font
-        font = ImageFont.truetype("impact.ttf", font_size)
-        # Draw context
-        d = ImageDraw.Draw(txt)
-        # Define the text and colors
-        outline_color = (0, 0, 0, 255)  # Black with full opacity
-        text_color = (255, 255, 255, 255)  # White with full opacity
-        # Calculate text size to center it
-        text_bbox = d.textbbox((0, 0), text, font=font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
-        position = (
-            (impact_image.width - text_width) // 2,
-            (impact_image.height - text_height) // 1.15,
-        )
-        # Draw outline by drawing the text shifted slightly in all directions
-        for outline_offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
-            d.text(
-                (position[0] + outline_offset[0], position[1] + outline_offset[1]),
-                text,
-                fill=outline_color,
-                font=font,
+        print("Got to apply impact")
+        try:
+            self.ensure_rgba()
+            impact_image = self.current_image.copy()
+            # Create a new image for the text overlay with transparency
+            txt = Image.new("RGBA", impact_image.size, (255, 255, 255, 0))
+            # Load the font
+            font = ImageFont.truetype("impact.ttf", font_size)
+            # Draw context
+            d = ImageDraw.Draw(txt)
+            # Define the text and colors
+            outline_color = (0, 0, 0, 255)  # Black with full opacity
+            text_color = (255, 255, 255, 255)  # White with full opacity
+            # Calculate text size to center it
+            text_bbox = d.textbbox((0, 0), text, font=font)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
+            position = (
+                (impact_image.width - text_width) // 2,
+                (impact_image.height - text_height) // 1.15,
             )
-            # Draw the main text over the outline
-            d.text(position, text, fill=text_color, font=font)
-        # Combine the text overlay with the original impact_image
-        combined = Image.alpha_composite(impact_image, txt)
-        return combined
+            # Draw outline by drawing the text shifted slightly in all directions
+            for outline_offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+                d.text(
+                    (position[0] + outline_offset[0], position[1] + outline_offset[1]),
+                    text,
+                    fill=outline_color,
+                    font=font,
+                )
+                # Draw the main text over the outline
+                d.text(position, text, fill=text_color, font=font)
+            # Combine the text overlay with the original impact_image
+            self.current_image = Image.alpha_composite(impact_image, txt)
+        except Exception as e:
+            raise ValueError(f"Failed to apply impact text: {e}")
+
 
     def apply_chromatic_aberration(self, offset: float) -> None:
         """
@@ -240,6 +246,10 @@ class EffectProcessor(BaseImageProcessor):
             params: Dictionary of effect parameters
         """
 
+        if effect_name == "random":
+            print(f"Random: {effect_name}")
+            return
+
         # These defaults should not be hardcoded.
         effect_map = {
             "impact": lambda p: 
@@ -261,18 +271,22 @@ class EffectProcessor(BaseImageProcessor):
         if effect_name not in effect_map:
             raise ValueError(f"Unknown effect: {effect_name}")
 
+        print("Applying effect: {effect_name}")
         # Apply effect
         effect_map[effect_name](params)
 
-    def apply_effects_sequence(self, effects: List[Tuple[str, Dict[str, Any]]]) -> None:
+    def apply_effects_sequence(self, effects: Dict[str, Dict[str, Any]]) -> None:
         """
         Apply a sequence of effects in order.
 
         Args:
             effects: List of (effect_name, parameters) tuples
         """
-        for effect_name, params in effects:
-            self.apply_effect(effect_name, params)
+
+        for item in self.effect_order:
+            if item in effects.keys():
+                print(f"Item: {item} Effect[item] = {effects[item]}")
+                self.apply_effect(item, effects[item])
 
     def create_effect_animation(
         self, effect_name: str, params: Dict[str, Any], num_frames: int = 30

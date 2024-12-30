@@ -220,12 +220,13 @@ class BaseImageProcessor:
 
         self.history.append(self.current_image.copy())
 
+        """
         # Get the channel
         channel_data = self.get_channel(channel)
 
         # Create offset version
         width, height = self.current_image.size
-        offset_data = Image.new("L", (width, height), 0)
+        offset_data = Image.new("RGB", (width, height), 0)
 
         # Calculate wrapped coordinates
         for y in range(height):
@@ -238,13 +239,39 @@ class BaseImageProcessor:
                     offset_data.putpixel((x, y), pixel)
 
                 else:
-                    raise ValueError("getpixel() returned unexpected value")
+                    continue
 
         # Apply Gaussian blur for smoother transitions
         offset_data = offset_data.filter(ImageFilter.GaussianBlur(0.5))
 
         # Set the channel
         self.set_channel(channel, offset_data)
+        """
+        """Enhanced channel offset with smoother transitions"""
+        image = self.current_image
+        width, height = image.size
+        offset_image = Image.new(image.mode, (width, height), 0)
+
+        if offset_x > 0:
+            left_part = image.crop((width - offset_x, 0, width, height))
+            main_part = image.crop((0, 0, width - offset_x, height))
+            offset_image.paste(left_part, (0, 0))
+            offset_image.paste(main_part, (offset_x, 0))
+        elif offset_x < 0:
+            right_part = image.crop((0, 0, -offset_x, height))
+            main_part = image.crop((-offset_x, 0, width, height))
+            offset_image.paste(right_part, (width + offset_x, 0))
+            offset_image.paste(main_part, (0, 0))
+        else:
+            offset_image = image.copy()
+    
+        # Apply Gaussian Blur
+        offset_image = offset_image.filter(ImageFilter.GaussianBlur(0.5))
+    
+        # Ensure the resulting image has the same size as the original
+        offset_image = offset_image.resize((width, height), Image.Resampling.LANCZOS)
+    
+        self.current_image = offset_image
 
     def undo(self) -> bool:
         """

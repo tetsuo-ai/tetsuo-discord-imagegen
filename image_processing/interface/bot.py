@@ -208,8 +208,9 @@ async def _handle_static_image(ctx, parsed: ParsedCommand):
     e_processor = EffectProcessor(load_image)
 
     # Apply all effects in order
-    for effect, params in parsed.effects.items():
-        e_processor.apply_effect(effect, params)
+    print(parsed.effects)
+
+    e_processor.apply_effects_sequence(parsed.effects)
 
     # Apply output parameters
     '''

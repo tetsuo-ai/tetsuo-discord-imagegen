@@ -246,6 +246,8 @@ class CommandParser:
         try:
             user_effects = {}
             my_args = {k: v for k, v in vars(args).items() if v is not None}
+            print(f"my_args: {my_args.items()}")
+
             for effect, option in my_args.items():
                 constraints = self.effect_params[effect]["constraints"]
                 if isinstance(option, list):
@@ -357,7 +359,6 @@ class CommandParser:
     def _validate_command(self, parsed: ParsedCommand) -> None:
         if (
             not parsed.image_path
-            and not parsed.preset_name
             and not any("--random" in effect[0] for effect in parsed.effects)
         ):
             raise ValueError("No image input specified")

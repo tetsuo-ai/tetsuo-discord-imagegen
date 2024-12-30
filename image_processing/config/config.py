@@ -46,6 +46,24 @@ class ProcessingConfig:
     default_format: str = "PNG"
 
 
+effect_order = [
+            "impact",
+            "rgb",
+            "color",
+            "glitch",
+            "chroma",
+            "scan",
+            "noise",
+            "energy",
+            "pulse",
+            "consciousness",
+]
+
+
+def get_effect_order():
+    return effect_order
+
+
 class ConfigManager:
     """
     Manages configuration settings and effect presets for the image processing system.
@@ -75,20 +93,12 @@ class ConfigManager:
         self.processing = ProcessingConfig()
 
         # Load effect configurations
-        self.effect_order = [
-            "impact",
-            "rgb",
-            "color",
-            "glitch",
-            "chroma",
-            "scan",
-            "noise",
-            "energy",
-            "pulse",
-            "consciousness",
-        ]
+        self.effect_order = effect_order
 
         # Effect paramter value ranges.
+
+    def get_effect_order(self):
+        return self.effect_order
 
     def _build_effect_argument(self) -> Dict[str, Dict[str, Any]]:
         effect_params = Dict[str, Dict[str, Any]]
@@ -109,8 +119,8 @@ class ConfigManager:
             },
             "chroma": {
                 "constraints": {
-                    "intensity": {"type": float, "min": 0.0, "max": 1.0,
-                                  "default": 0.5},
+                    "intensity": {"type": int, "min": 1, "max": 40,
+                                  "default": 20},
                 },
                 "description": "Chromatic aberration offset",
             },
@@ -167,7 +177,7 @@ class ConfigManager:
             },
             "impact": {
                 "constraints": {
-                    "intensity": {"type": str, "min": 1, "max": 50,
+                    "text": {"type": str, "min": 1, "max": 50,
                                   "default": "$TETSUO"},
                     "font": {"type": int, "min": 1, "max": 100, "default": 70},
                 },
