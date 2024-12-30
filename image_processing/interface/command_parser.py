@@ -49,7 +49,6 @@ class ParsedCommand:
     animation_params: Optional[AnimationParams] = None
     ascii_params: Optional[ASCIIParams] = None
     output_params: OutputParams = field(default_factory=OutputParams)
-    preset_name: Optional[str] = None
     tags: List[str] = field(default_factory=list)
 
 
@@ -62,7 +61,8 @@ class CommandParser:
         self.config = configure
         self.logger = logging.getLogger("CommandParser")
         self.effect_params = configure.effect_params
-        self.commands = ["animate", "ascii", "image"]
+        self._create_parser()
+        self.commands = [command for command in self.parser_hook.keys()]
 
     def _create_parser(self) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(
@@ -71,29 +71,30 @@ class CommandParser:
                 dest="command", help="Command to execute")
 
         # Initialize Subparsers
-        animate_parser = subparsers.add_parser("animate", help="Create animation")
-        ascii_parser = subparsers.add_parser("ascii", help="Generate ASCII art")
-        image_parser = subparsers.add_parser("image", help="Input image path")
+        self.animate_parser = subparsers.add_parser("animate", help="Create animation")
+        self.ascii_parser = subparsers.add_parser("ascii", help="Generate ASCII art")
+        self.image_parser = subparsers.add_parser("image", help="Input image path")
 #        self._add_arguments(animate_parser)
-        self._add_ascii_arguments(ascii_parser)
-        self._add_effect_arguments(image_parser)
+        self._add_ascii_arguments(self.ascii_parser)
+        self._add_effect_arguments(self.image_parser)
 
-#        self._add_animation_arguments(animate_parser)
-        self._add_ascii_arguments(ascii_parser)
+        self.parser_hook = {"animate": self.animate_parser,
+                            "ascii": self.ascii_parser,
+                            "image": self.image_parser}
 
+        self.command_parsers = subparsers
         return parser
-
 
     def _build_help(self, option_def: Dict, effect_params: Dict, effect,
                     description: str) -> str:
         help_output = f"--{effect}\n"
         if option_def['names'][0] is not None:
+            if effect != 'random':
+                for opt_name in option_def['names']:
+                    opts = effect_params[effect]['constraints'][opt_name]
 
-            for opt_name in option_def['names']:
-                opts = effect_params[effect]['constraints'][opt_name]
-
-                help_output += \
-               f"\t[{opts['min']} - {opts['max']}] [default: {opts['default']}]\n"
+                    help_output += \
+                        f"\t[{opts['min']} - {opts['max']}] [default: {opts['default']}]\n"
         help_output += f"{description}\n"
 
         return help_output
@@ -107,8 +108,13 @@ class CommandParser:
 
         for constraint, key in constraints.items():
             parsed_options['names'].append(constraint)
-            parsed_options['types'].add(key['type'])
-            parsed_options['defaults'].append(key['default'])
+            if not key:
+                continue
+            if next(iter(key)) is None:
+                parsed_options['types'].add("None")
+            else:
+                parsed_options['types'].add(key['type'])
+                parsed_options['defaults'].append(key['default'])
 
         return parsed_options
 
@@ -136,45 +142,44 @@ class CommandParser:
             option_def = {}
 
             for effect, params in effect_dict.items():
-                option_def = self._build_option_list(
-                        self.effect_params[effect]["constraints"])
-
-            help_msg = self._build_help(option_def, self.effect_params,
+                option_def.update(self._build_option_list(
+                        self.effect_params[effect]["constraints"]))
+                help_msg = self._build_help(option_def, self.effect_params,
                                         effect, params['description'])
+
+                constraints = self.effect_params[effect]["constraints"]
+
+                if effect == 'random':
+                    parser.add_argument(
+                            f"--{effect}",
+                            action="store_true",
+                            help=help_msg
+                    )
+                elif len(option_def['names']) == 1:
+                    parser.add_argument(
+                        f"--{effect}",
+                        type=constraints[option_def['names'][0]]["type"],
+                        help=help_msg
+                    )
+                else:
+                    # Handle single option arguments
+                    if len(option_def['types']) == 1:
+                        parser.add_argument(
+                            f"--{effect}",
+                            type=next(iter(option_def['types'])),
+                            nargs="*",
+                            help=help_msg
+                        )
+                    else:
+                        # Handle multiple option arguments
+                        parser.add_argument(
+                            f"--{effect}",
+                            type=self.multi_type,
+                            nargs="*",
+                            help=help_msg
+                        )
         except Exception as e:
             raise ValueError(f"Error while parsing command: {str(e)}")
-
-        constraints = self.effect_params[effect]["constraints"]
-
-        if len(option_def['names']) == 1:
-            parser.add_argument(
-                f"--{effect}",
-                type=constraints[option_def['names'][0]]["type"],
-                help=help_msg
-            )
-        # All arguments which do not take options use None as option name
-        elif option_def['names'][0] is None:
-            parser.add_argument(
-                    f"--{effect}",
-                    help=help_msg
-            )
-        else:
-            # Handle single option arguments
-            if len(option_def['types']) == 1:
-                parser.add_argument(
-                    f"--{effect}",
-                    type=next(iter(option_def['types'])),
-                    nargs="*",
-                    help=help_msg
-                )
-            else:
-                # Handle multiple option arguments
-                parser.add_argument(
-                    f"--{effect}",
-                    type=self.multi_type,
-                    nargs="*",
-                    help=help_msg
-                )
 
     def _add_ascii_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
@@ -201,33 +206,67 @@ class CommandParser:
             help="Use detailed character set for ASCII art",
         )
 
+    async def format_help(self, ctx):
+        help_out = str()
+        for _, subparser in self.command_parsers._name_parser_map.items():
+            if subparser is None:
+                await ctx.send("No subparser found!")
+            for action in subparser._actions:
+                if action != 'help':
+                    if action.help:
+                        help_out += str(action.help)
+
+        await ctx.send(help_out)
+
     async def parse_command(
         self, ctx, command_str: str, image_input: Optional[Union[str, Path]] = None
     ) -> ParsedCommand:
-        parser = self._create_parser()
+
+        arg_list = command_str.split()
+        command = arg_list[0]
 
         try:
-            args = parser.parse_args(command_str.split())
+            parser = self.parser_hook[command]
+        except Exception as e:
+            raise ValueError(f"Invalid command: {str(e)}")
+
+        try:
+            await ctx.send(f"{arg_list}")
+            args = parser.parse_args(arg_list[1:])
+            await ctx.send(f"Parser args found: {vars(args)}")
         except argparse.ArgumentError as e:
             raise ValueError(f"Invalid command arguments: {str(e)}")
+        except SystemExit as e:
+            # Handle SystemExit specifically to prevent it from terminating the bot
+            raise ValueError(f"Argument parsing failed: {e}")
 
-        if args.command not in self.commands:
-            raise ValueError(f"Invalid command: {args.command}")
+        if command not in self.commands:
+            raise ValueError(f"Invalid command: {command}")
 
-        user_effects = {}
-        for effect, option in args.items():
-            constraints = self.effect_params[effect]["constraints"]
-            if isinstance(option, list):
+        try:
+            user_effects = {}
+            my_args = {k: v for k, v in vars(args).items() if v is not None}
+            for effect, option in my_args.items():
+                constraints = self.effect_params[effect]["constraints"]
+                if isinstance(option, list):
+                    constraint_names = list(constraints.keys())
+                    user_effects[effect] = {}
+                    for i, item in enumerate(option):
+                        # Only assign if there are more constraints to match
+                        if i < len(constraint_names):
+                            user_effects[effect][constraint_names[i]] = item
+                else:
+                    # Here we check if there's only one constraint for non-list options
+                    if len(constraints) == 1:
+                        user_effects[effect] = {list(constraints.keys())[0]: option}
+                    else:
+                        # If there are multiple constraints, you might need a different approach
+                        # or perhaps raise an error or log a warning
+                        self.logger.warning(f"Multiple constraints for effect {effect} but only one value provided: {option}")
+                        user_effects[effect] = {list(constraints.keys())[0]: option}
 
-                constraint_names = constraints.keys()
-
-                for i, item in enumerate(option):
-                    if i >= len(constraints):
-                        break
-                    user_effects[effect] = {f"{next(iter(constraint_names))}": item}
-            else:
-                user_effects[effect] = {f'{constraints.keys()[0]}': option}
-
+        except Exception as e:
+            raise ValueError(f"Error while parsing command: {str(e)}")
         if "--random" in user_effects:
             image_path = self._get_random_image_path()
         else:
@@ -235,16 +274,15 @@ class CommandParser:
                     str(image_input) if image_input else self.config.INPUT_IMAGE
 
         result = ParsedCommand(
-            command=args.command,
+            command=command,
             image_path=image_path,
-            preset_name=args.preset,
             effects=user_effects,
-            tags=args.tags or [],
+            tags=[],
         )
 
-        if args.command == "animate":
+        if "animate" in user_effects:
             result.animation_params = self._create_animation_params(args)
-        elif args.command == "ascii":
+        elif command == "ascii":
             result.ascii_params = self._create_ascii_params(args)
 
         result.output_params = self._create_output_params(args)
@@ -253,6 +291,7 @@ class CommandParser:
             result.image_path = self._get_random_image_path()
 
         self._validate_command(result)
+        self.current_parser = result
         return result
 
 
@@ -304,14 +343,7 @@ class CommandParser:
 
     def _create_output_params(self, args: argparse.Namespace) -> OutputParams:
         output_params = OutputParams()
-        if args.format:
-            output_params.format = OutputFormat[args.format]
-        if args.quality is not None:
-            output_params.quality = args.quality
-        for param in ("alpha", "coloralpha", "rgbalpha"):
-            value = getattr(args, param, None)
-            if value is not None:
-                setattr(output_params, param, value)
+
         return output_params
 
     def _get_random_image_path(self) -> str:

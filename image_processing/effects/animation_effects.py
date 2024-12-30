@@ -1,5 +1,4 @@
 import logging
-import os
 import shutil
 import subprocess
 import tempfile
@@ -11,7 +10,6 @@ import numpy as np
 from PIL import Image
 
 from ..core.effect_processor import EffectProcessor
-from ..core.image_processor import BaseImageProcessor
 from ..core.utils import ImageUtils
 
 
@@ -44,7 +42,7 @@ class AnimationProcessor:
         self.frames_dir = self.temp_dir / "frames"
         self.frames_dir.mkdir(exist_ok=True)
 
-    def _validate_effects(self, effects: List[Tuple[str, Dict[str, Any]]]) -> None:
+    def _validate_effects(self, effects: Dict[str, Dict[str, Any]]) -> None:
         """Validate effect parameters before processing."""
         valid_effects = {
             "glitch",
@@ -59,7 +57,7 @@ class AnimationProcessor:
         for effect_name, params in effects:
             if effect_name not in valid_effects:
                 raise ValueError(f"Invalid effect: {effect_name}")
-
+        """
             # Normalize intensity parameters
             if "intensity" in params:
                 intensity = params["intensity"]
@@ -70,6 +68,7 @@ class AnimationProcessor:
                         min(1.0, max(0.0, float(intensity[0]) / 100)),
                         min(1.0, max(0.0, float(intensity[1]) / 100)),
                     )
+        """
 
     def _interpolate_parameters(
         self, params: Dict[str, Any], progress: float
@@ -459,7 +458,7 @@ class ASCIIProcessor:
 
     def create_ascii_animation(
         self,
-        effects: List[Tuple[str, Dict[str, Any]]],
+        effects: Dict[str, Dict[str, Any]],
         num_frames: int = 30,
         cols: int = 120,
         scale: float = 0.43,

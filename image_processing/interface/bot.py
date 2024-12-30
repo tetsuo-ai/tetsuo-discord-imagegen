@@ -1,9 +1,8 @@
 import asyncio
-import os
 import sys
 from io import BytesIO
 from pathlib import Path
-from typing import Optional, Union, Dict, Any
+from typing import Optional, Union
 
 import discord
 from discord.ext import commands
@@ -11,7 +10,6 @@ from dotenv import load_dotenv
 
 from ..config.config import ConfigManager, AnimationConfig
 from ..core.effect_processor import EffectProcessor
-from ..core.image_processor import BaseImageProcessor
 from ..effects.animation_effects import AnimationProcessor, ASCIIProcessor
 from ..storage.repository import ImageRepository
 from .command_parser import CommandParser, ParsedCommand
@@ -107,6 +105,7 @@ async def image_command(ctx, *args):
         await ctx.send(f"Error processing image, process_command: {str(e)}")
 '''
 
+
 @bot.command(name="image")
 async def image_command(ctx, *args):
     """Process image with effects and optional animation"""
@@ -121,13 +120,16 @@ async def image_command(ctx, *args):
             parsed = await command_parser.parse_command(
                 ctx, f"image {' '.join(args)}", image_input
             )
+            await ctx.send(f"{parsed}")
         except ValueError as e:
             await ctx.send(f"Invalid command: {str(e)}")
             return
 
         if "--animate" in parsed.effects:
+            await ctx.send(f"{parsed.effects.items()}")
             await _handle_animation(ctx, parsed)
         else:
+            await ctx.send(f"{parsed.effects.items()}")
             await _handle_static_image(ctx, parsed)
 
     except Exception as e:
@@ -258,11 +260,11 @@ async def animate_command(ctx, *args):
         except KeyError:
             frames = AnimationConfig.default_frames
 
-        try: 
+        try:
             fps = command.effects['fps']['count']
         except KeyError:
-            fps = command.effects['fps']['count']
-            
+            fps = AnimationConfig.default_fps
+
         # Create animation
         processor = AnimationProcessor(image_bytes)
         try:
@@ -359,14 +361,14 @@ async def ascii_command(ctx, *args):
 @bot.command(name="help")
 async def help_command(ctx):
     """Show help information."""
-    await ctx.send(command_parser.format_help())
+    await ctx.send(command_parser.format_help(ctx))
 
 
 @bot.command(name="examples")
 async def examples_command(ctx):
     """Show example commands."""
-    examples = command_parser.get_example_commands()
-    await ctx.send("Example commands:\n" + "\n".join(examples))
+    # examples = command_parser.get_example_commands()
+    await ctx.send("Example commands: TBD\n")  # + "\n".join(examples))
 
 
 def main():

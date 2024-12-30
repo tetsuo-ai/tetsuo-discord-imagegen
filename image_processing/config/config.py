@@ -96,7 +96,7 @@ class ConfigManager:
         effect_params = {
             "random": {
                 "constraints": {
-                    None: None
+                    "image_path": {"type": str, "default": self.INPUT_IMAGE},
                 },
                 "description": "Random Image Selection",
             },
@@ -208,9 +208,10 @@ class ConfigManager:
             },
         }
 
-        return effect_params
         # Load presets
         self.presets = self._load_presets()
+
+        return effect_params
 
     def _load_presets(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -285,7 +286,7 @@ class ConfigManager:
                     )
 
                 param_range = constraints[param]
-                if isinstance(value, (tuple, list)):
+                if isinstance(value, Dict):
                     for v in value:
                         if not (param_range["min"] <= v <= param_range["max"]):
                             raise ValueError(
