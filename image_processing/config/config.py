@@ -60,6 +60,10 @@ effect_order = [
 ]
 
 
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+IMAGES_FOLDER = "images"
+INPUT_IMAGE = "input.png"
+
 def get_effect_order():
     return effect_order
 
@@ -81,9 +85,6 @@ class ConfigManager:
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
         load_dotenv()
-        self.DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-        self.IMAGES_FOLDER = "images"
-        self.INPUT_IMAGE = "input.png"
 
         # Initialize configuration objects
         self.effect_params = self._build_effect_argument()
@@ -106,7 +107,7 @@ class ConfigManager:
         effect_params = {
             "random": {
                 "constraints": {
-                    "image_path": {"type": str, "default": self.INPUT_IMAGE},
+                    "image_path": {"type": str, "default": INPUT_IMAGE},
                 },
                 "description": "Random Image Selection",
             },
@@ -127,8 +128,8 @@ class ConfigManager:
             "scan": {
                 "constraints": {
                     "gap": {"type": int, "min": 1, "max": 50, "default": 2},
-                    "opacity": {"type": float, "min": 0.0, "max": 1.0,
-                                "default": 0.5},
+                    "opacity": {"type": int, "min": 0, "max": 100,
+                                "default": 50},
                 },
                 "description": "Scan line effect",
                 "nargs": '*',
@@ -177,9 +178,8 @@ class ConfigManager:
             },
             "impact": {
                 "constraints": {
-                    "text": {"type": str, "min": 1, "max": 50,
-                                  "default": "$TETSUO"},
-                    "font": {"type": int, "min": 1, "max": 100, "default": 70},
+                    "text": {"type": str,
+                             "default": "$TETSUO"},
                 },
                 "description": "Impact effect length",
                 "nargs": "*",
@@ -198,11 +198,11 @@ class ConfigManager:
             },
             "rgb": {
                 "constraints": {
-                    "r": {"type": float, "min": 0, "max": 255,
+                    "r": {"type": int, "min": 0, "max": 255,
                               "default": 75},
-                    "g": {"type": float, "min": 0, "max": 255,
+                    "g": {"type": int, "min": 0, "max": 255,
                               "default": 75},
-                    "b": {"type": float, "min": 0, "max": 255,
+                    "b": {"type": int, "min": 0, "max": 255,
                               "default": 75},
                 },
                 "description": "RGB color",
@@ -219,7 +219,7 @@ class ConfigManager:
         }
 
         # Load presets
-        self.presets = self._load_presets()
+        # self.presets = self._load_presets()
 
         return effect_params
 

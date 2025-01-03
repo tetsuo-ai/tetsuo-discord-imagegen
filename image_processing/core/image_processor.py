@@ -269,9 +269,8 @@ class BaseImageProcessor:
         offset_image = offset_image.filter(ImageFilter.GaussianBlur(0.5))
     
         # Ensure the resulting image has the same size as the original
-        offset_image = offset_image.resize((width, height), Image.Resampling.LANCZOS)
+        self.current_image = offset_image.resize((width, height), Image.Resampling.LANCZOS)
     
-        self.current_image = offset_image
 
     def undo(self) -> bool:
         """

@@ -8,7 +8,8 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from ..config.config import ConfigManager, AnimationConfig
+from PIL import Image
+from ..config.config import ConfigManager, AnimationConfig, DISCORD_TOKEN
 from ..core.effect_processor import EffectProcessor
 from ..effects.animation_effects import AnimationProcessor, ASCIIProcessor
 from ..storage.repository import ImageRepository
@@ -18,7 +19,6 @@ from .command_parser import CommandParser, ParsedCommand
 # Initialize configuration
 load_dotenv()
 configs = ConfigManager(config_dir="config")
-DISCORD_TOKEN = configs.DISCORD_TOKEN
 
 repository = ImageRepository(
     db_path="image_repository.db", storage_path="image_storage"
@@ -117,6 +117,7 @@ async def image_command(ctx, *args):
 
         # Parse command
         try:
+            print(f"args = {args}\njoin_args = {' '.join(args)}")
             parsed = await command_parser.parse_command(
                 ctx, f"image {' '.join(args)}", image_input
             )
@@ -309,7 +310,14 @@ async def ascii_command(ctx, *args):
     """Create ASCII art from an image."""
     try:
         # Parse command
-        command = await command_parser.parse_command(ctx, f"ascii {' '.join(args)}")
+        print(f"Args: {args}")
+        if len(args) > 1:
+            parsed: ParsedCommand = await command_parser.parse_command(
+                    ctx, f"ascii {' '.join(args)}")
+
+        else:
+            parsed: ParsedCommand = await command_parser.parse_command(
+                    ctx, "ascii")
 
         # Get input image
         if ctx.message.attachments:
@@ -322,38 +330,51 @@ async def ascii_command(ctx, *args):
             with open("input.png", "rb") as f:
                 image_bytes = f.read()
 
-        if command.ascii_params is None:
+        if parsed.ascii_params is None:
             ctx.send("No ASCII parameters specified")
             return
 
+        image = Image.open(BytesIO(image_bytes))
+
+        print("Got to Processor")
+
         # Generate ASCII art
-        processor = ASCIIProcessor(image_bytes)
-        ascii_art = processor.convert_to_ascii(
-            cols=command.ascii_params.cols,
-            scale=command.ascii_params.scale,
-            moreLevels=True,
-        )
+        try:
+            cols=parsed.ascii_params.cols
+        except Exception:
+            cols=configs.ascii.default_cols
+
+        try:
+            scale=parsed.ascii_params.cols
+        except Exception:
+            scale=configs.ascii.default_scale
+        processor = ASCIIProcessor(BytesIO(image_bytes))
+        ascii_image = \
+            processor.convert_to_ascii_image(image,
+                                             cols=cols,
+                                             scale=scale,
+                                             moreLevels=True,
+                                             )
 
         # Create and save both text and image versions
-        ascii_image = processor.create_ascii_image(ascii_art)
+        # ascii_image = processor.create_gif(ascii_art)
 
         # Store results if tagged
-        if command.tags:
+        if parsed.tags:
             image_id = repository.store_image(
                 image=ascii_image,
                 title=f"ASCII_{ctx.author.name}",
                 creator_id=str(ctx.author.id),
                 creator_name=ctx.author.name,
-                tags=command.tags + ["ascii"],
-                parameters=command.ascii_params,
+                tags=parsed.tags + ["ascii"],
+                parameters=parsed.ascii_params,
             )
             await ctx.send(f"ASCII art stored with ID: {image_id}")
 
         # Send results
-        await ctx.send(file=discord.File(ascii_image, filename="ascii.png"))
-        await ctx.send(
-            file=discord.File("\n".join(ascii_art).encode(), filename="ascii.txt")
-        )
+        ascii_image.save("ascii_output.png")
+        await ctx.send(file=discord.File("ascii_output.png",
+                                         filename="ascii.png"))
 
     except Exception as e:
         await ctx.send(f"Error creating ASCII art: {str(e)}")
@@ -362,7 +383,7 @@ async def ascii_command(ctx, *args):
 @bot.command(name="help")
 async def help_command(ctx):
     """Show help information."""
-    await ctx.send(command_parser.format_help(ctx))
+    await ctx.send(await command_parser.format_help(ctx))
 
 
 @bot.command(name="examples")

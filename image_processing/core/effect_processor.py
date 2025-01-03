@@ -122,15 +122,17 @@ class EffectProcessor(BaseImageProcessor):
         self.offset_channel("R", -max_offset)
         self.offset_channel("B", max_offset)
 
-    def apply_scan_lines(self, gap: int, opacity: float = 0.5) -> None:
+    def apply_scan_lines(self, gap: int, opacity_param: int = 50) -> None:
         """
         Apply scan line effect.
 
         Args:
             gap: Pixels between scan lines
-            opacity: Line opacity (0.0 to 1.0)
+            opacity: Line opacity (0 to 100)
         """
-        if gap < 1:
+        opacity = float(opacity_param) / 100.0
+
+        if int(gap) < 1:
             raise ValueError("Gap must be at least 1 pixel")
         if not 0 <= opacity <= 1:
             raise ValueError("Opacity must be between 0 and 1")
@@ -253,8 +255,7 @@ class EffectProcessor(BaseImageProcessor):
         # These defaults should not be hardcoded.
         effect_map = {
             "impact": lambda p: 
-                self.apply_impact_text(p.get("text", "$TETSUO"),
-                                       p.get("font_size", 50)),
+                self.apply_impact_text(p.get("text", "$TETSUO")),
             "glitch": lambda p: self.apply_glitch(p.get("intensity", 0.5)),
             "chroma": lambda p: self.apply_chromatic_aberration(p.get("offset", 0.5)),
             "scan": lambda p: self.apply_scan_lines(
